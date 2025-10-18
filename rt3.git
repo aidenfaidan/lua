@@ -199,14 +199,14 @@ local ToggleCook = MainTab:Toggle({
 })
 
 -----------------------------
--- AUTO COLLECT CASH
+-- AUTO COLLECT CASH (fixed)
 -----------------------------
 local collectCashRunning = false
 local collectCashThread = nil
 
 local ToggleCollectCash = MainTab:Toggle({
 	Title = "Auto Collect Cash",
-	Desc = "Tự động thu tiền từ khách yang sudah selesai makan",
+	Desc = "Tự động thu tiền từ khách đã ăn xong",
 	Icon = "sack-dollar",
 	Type = "Checkbox",
 	Default = false,
@@ -217,9 +217,13 @@ local ToggleCollectCash = MainTab:Toggle({
 				while collectCashRunning do
 					if temp then
 						for _, v in temp:GetDescendants() do
-							if v:IsA("ProximityPrompt") and string.find(string.lower(v.ActionText or ""), "collect") then
-								fireproximityprompt(v)
-								task.wait()
+							if v:IsA("ProximityPrompt") then
+								local action = tostring(v.ActionText or ""):lower()
+								if action:find("collect") or action:find("cash") or action:find("bill") then
+									-- aman-call, tidak error kalau fungsi global belum ada
+									pcall(function() fireproximityprompt(v) end)
+									task.wait()
+								end
 							end
 						end
 					end
