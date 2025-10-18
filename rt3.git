@@ -1,0 +1,520 @@
+--////////////////////////////////////////////////////////////--
+-- Restaurant Tycoon 3 – QoL Helper (WindUI)
+-- Fitur:
+-- 1) Auto Take Order (lebih stabil)
+-- 2) Auto Do Order (counter/konter order)
+-- 3) Auto Collect Cash (ambil uang di meja)
+-- Catatan: Script ini bergantung pada struktur game saat ini.
+-- Saya buat tahan banting: otomatis cari Remote/Event & Prompt relevan,
+-- plus guard supaya nggak spam berlebihan.
+--////////////////////////////////////////////////////////////--
+
+--=========================== UI Loader ===========================--
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+local Window = WindUI:CreateWindow({
+    Title = "Restaurant Tycoon 3",
+    Icon = "door-open",
+    Author = "Made By Minh (patched)",
+    Folder = "RT3Minh",
+    Size = UDim2.fromOffset(520, 360),
+    Transparent = true,
+    Theme = "Dark",
+    SideBarWidth = 200,
+    Background = "", -- rbxassetid only
+    BackgroundImageTransparency = 0.42,
+    HideSearchBar = true,
+    ScrollBarEnabled = true,
+    User = {
+        Enabled = false,
+        Anonymous = true,
+        Callback = function()
+            print("clicked")
+        end,
+    },
+})
+
+Window:EditOpenButton({
+    Title = "RT3",
+    Icon = "Box",
+    CornerRadius = UDim.new(0,10),
+    StrokeThickness = 1.75,
+    Color = ColorSequence.new(
+        Color3.fromHex("6FA8DC"),
+        Color3.fromHex("CFE2F3")
+    ),
+    OnlyMobile = false,
+    Enabled = true,
+    Draggable = true,
+})
+
+--=========================== Tabs ===========================--
+local MainTab = Window:Tab({
+    Title = "Main",
+    Icon = "house",
+    Desc = "Main Section",
+    Locked = false,
+})
+Window:SelectTab(1)
+
+--=========================== Services & Refs ===========================--
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local CollectionService = game:GetService("CollectionService")
+
+local LocalPlayer = Players.LocalPlayer
+
+--=========================== Helpers ===========================--
+local function safeWaitFor(parent, name, timeout)
+    local t0 = tick()
+    local obj = parent:FindFirstChild(name)
+    while not obj and (timeout == nil or tick() - t0 < timeout) do
+        obj = parent:FindFirstChild(name)
+        if obj then break end
+        task.wait(0.05)
+    end
+    return obj
+end
+
+local function isDescendantOf(inst, ancestor)
+    if not inst or not ancestor then return false end
+    local p = inst
+    while p do
+        if p == ancestor then return true end
+        p = p.Parent
+    end
+    return false
+end
+
+local function notify(text)
+    -- WindUI notif sederhana (fallback print)
+    if WindUI and WindUI.Notify then
+        WindUI:Notify(text)
+    else
+        print("[RT3]: " .. tostring(text))
+    end
+end
+
+-- Kadang executor lama belum punya Color3.fromHex
+if not Color3.fromHex then
+    function Color3.fromHex(hex)
+        hex = hex:gsub("#","")
+        local r = tonumber(hex:sub(1,2),16) or 255
+        local g = tonumber(hex:sub(3,4),16) or 255
+        local b = tonumber(hex:sub(5,6),16) or 255
+        return Color3.fromRGB(r,g,b)
+    end
+end
+
+-- Wrapper fireproximityprompt yang aman
+local function firePrompt(prompt)
+    if not prompt or not prompt:IsA("ProximityPrompt") then return end
+    local ok, err = pcall(function()
+        -- Eksekutor modern biasanya ada global ini
+        if typeof(fireproximityprompt) == "function" then
+            fireproximityprompt(prompt, math.max(1, prompt.HoldDuration or 0))
+        else
+            -- Fallback: set jarak & enable lalu trigger input simulasi
+            local original = prompt.MaxActivationDistance
+            prompt.MaxActivationDistance = math.max(original, 50)
+            prompt:InputHoldBegin()
+            task.wait(prompt.HoldDuration or 0.1)
+            prompt:InputHoldEnd()
+            prompt.MaxActivationDistance = original
+        end
+    end)
+    if not ok and err then
+        -- Diamkan saja supaya tidak spam error
+    end
+end
+
+-- Cari Tycoon milik player
+local function resolveTycoon()
+    local tycoons = Workspace:FindFirstChild("Tycoons")
+    if not tycoons then return nil end
+    for _, v in ipairs(tycoons:GetDescendants()) do
+        if v.Name == "Player" and v:IsA("ObjectValue") and v.Value == LocalPlayer then
+            return v.Parent
+        end
+    end
+    return nil
+end
+
+local Tycoon = resolveTycoon()
+local Surface = nil
+if Tycoon then
+    Surface = safeWaitFor(safeWaitFor(Tycoon, "Items", 5), "Surface", 5)
+end
+
+-- Temp folder (beberapa prompt/temporary nodes muncul di sini)
+local TempFolder = Workspace:FindFirstChild("Temp")
+
+-- Remote shortcuts (best effort)
+local Events = ReplicatedStorage:FindFirstChild("Events")
+local RestaurantEvents = Events and Events:FindFirstChild("Restaurant")
+local CookEvents = Events and Events:FindFirstChild("Cook")
+
+--=========================== State & Settings ===========================--
+local state = {
+    autoTakeOrder = false,
+    autoDoOrder   = false,
+    autoCollect   = false,
+}
+
+local tickrate = {
+    takeOrder = 0.35,  -- jangan terlalu cepat biar gak keblokir
+    doOrder   = 0.20,
+    collect   = 0.35,
+}
+
+-- Kata kunci untuk filter ProximityPrompt
+local KEYWORDS = {
+    TAKE_ORDER = {"take order", "accept order", "terima pesanan", "ambil pesanan"},
+    DO_ORDER   = {"order", "take", "claim", "serve", "prepare"}, -- lebih umum, nanti difilter konteksnya
+    CASH       = {"collect cash", "collect", "cash", "ambil uang", "ambil tagihan", "bill"},
+}
+
+local function textContainsAny(text, list)
+    if not text or not list then return false end
+    local lower = string.lower(text)
+    for _, key in ipairs(list) do
+        if string.find(lower, key, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+--=========================== Thread Guards ===========================--
+local threads = {
+    takeOrder = nil,
+    doOrder   = nil,
+    collect   = nil,
+}
+
+local function stopThread(k)
+    if threads[k] then
+        task.cancel(threads[k])
+        threads[k] = nil
+    end
+end
+
+--=========================== AUTO TAKE ORDER ===========================--
+-- Dua jalur:
+-- 1) GUI "CustomerSpeechUI" -> fire TaskCompleted (fallback lama kamu)
+-- 2) ProximityPrompt dengan ActionText terkait "Take Order" dalam tycoon/Temp
+
+local function tryFireTaskCompletedFromUI(frame)
+    local adornee = frame:FindFirstChild("Adornee")
+    if not adornee or not adornee.Value then return false end
+    local adorneePart = adornee.Value
+    local customer = adorneePart.Parent and adorneePart.Parent.Name or nil
+    local group = adorneePart.Parent and adorneePart.Parent.Parent and adorneePart.Parent.Parent.Name or nil
+    if not (customer and group and Tycoon) then return false end
+
+    if RestaurantEvents and RestaurantEvents:FindFirstChild("TaskCompleted") then
+        local payload = {
+            GroupId = tostring(group),
+            Tycoon = Tycoon,
+            Name = "TakeOrder",
+            CustomerId = tostring(customer),
+        }
+        local ok, _ = pcall(function()
+            RestaurantEvents.TaskCompleted:FireServer(payload)
+        end)
+        return ok
+    end
+    return false
+end
+
+local function autoTakeOrderLoop()
+    notify("Auto Take Order: ON")
+    while state.autoTakeOrder do
+        -- 1) Cek GUI indikator customer minta order
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then
+            for _, ui in ipairs(pg:GetChildren()) do
+                if ui.Name == "CustomerSpeechUI" and ui:IsA("BillboardGui") then
+                    -- Beberapa build pakai property .Enabled, beberapa selalu aktif saat ada Adornee
+                    if ui.Enabled ~= false then
+                        pcall(tryFireTaskCompletedFromUI, ui)
+                    end
+                end
+            end
+        end
+
+        -- 2) Cek ProximityPrompt "Take Order" di area Tycoon / Temp
+        local function scan(container)
+            if not container then return end
+            for _, v in ipairs(container:GetDescendants()) do
+                if v:IsA("ProximityPrompt") then
+                    local actionText = (v.ActionText or "")
+                    if textContainsAny(actionText, KEYWORDS.TAKE_ORDER) then
+                        -- Prioritaskan yang masih dalam Tycoon kita (atau Temp yang biasanya temporary owned)
+                        if (Tycoon and isDescendantOf(v, Tycoon)) or (TempFolder and isDescendantOf(v, TempFolder)) then
+                            firePrompt(v)
+                            task.wait(0.05)
+                        end
+                    end
+                end
+            end
+        end
+
+        scan(Tycoon)
+        scan(TempFolder)
+
+        task.wait(tickrate.takeOrder)
+    end
+    notify("Auto Take Order: OFF")
+end
+
+--=========================== AUTO DO ORDER (Counter/Station) ===========================--
+-- Perbaikan: lebih selektif prompt yang disambar, dan cek area Tycoon/Temp
+local function autoDoOrderLoop()
+    notify("Auto Do Order: ON")
+    while state.autoDoOrder do
+        local function scan(container)
+            if not container then return end
+            for _, v in ipairs(container:GetDescendants()) do
+                if v:IsA("ProximityPrompt") then
+                    local aText = (v.ActionText or "")
+                    -- Filter supaya tidak nyamber semua
+                    -- Biasanya konter pesanan punya kata "Order", "Take", "Claim", dsb.
+                    if textContainsAny(aText, KEYWORDS.DO_ORDER) then
+                        if (Tycoon and isDescendantOf(v, Tycoon)) or (TempFolder and isDescendantOf(v, TempFolder)) then
+                            -- Tambahan: coba deteksi konter/area publik (banyak konter punya parent bernama 'Counter', 'Order', 'Till', dsb)
+                            local parentName = (v.Parent and v.Parent.Name or ""):lower()
+                            if parentName:find("counter") or parentName:find("order") or parentName:find("till") or parentName:find("station") or parentName:find("bar") then
+                                firePrompt(v)
+                                task.wait(0.05)
+                            else
+                                -- Masih kita izinkan tapi jarang
+                                firePrompt(v)
+                                task.wait(0.05)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        scan(Tycoon)
+        scan(TempFolder)
+
+        -- Beberapa map butuh ping ke Remote Cook untuk "wake" oven/station
+        if CookEvents and CookEvents:FindFirstChild("CookInputRequested") and Surface then
+            -- Cari Oven sekali (cache)
+            local ovenInst = nil
+            for _, d in ipairs(Surface:GetDescendants()) do
+                if typeof(d.Name) == "string" and d.Name:lower():find("oven") then
+                    ovenInst = d.Parent
+                    break
+                end
+            end
+            if ovenInst then
+                pcall(function()
+                    CookEvents.CookInputRequested:FireServer("Interact", ovenInst, "Oven")
+                end)
+            end
+        end
+
+        task.wait(tickrate.doOrder)
+    end
+    notify("Auto Do Order: OFF")
+end
+
+--=========================== AUTO COLLECT CASH ===========================--
+-- Ambil uang di meja setelah customer selesai makan (biasanya muncul ProximityPrompt)
+local function autoCollectCashLoop()
+    notify("Auto Collect Cash: ON")
+    while state.autoCollect do
+        local function scan(container)
+            if not container then return end
+            for _, v in ipairs(container:GetDescendants()) do
+                if v:IsA("ProximityPrompt") then
+                    local aText = (v.ActionText or "")
+                    if textContainsAny(aText, KEYWORDS.CASH) then
+                        if (Tycoon and isDescendantOf(v, Tycoon)) or (TempFolder and isDescendantOf(v, TempFolder)) then
+                            -- Kadang prompt cash nempel ke kursi/meja dengan nama 'Table', 'Seat', 'Chair', 'Bill', dll
+                            firePrompt(v)
+                            task.wait(0.05)
+                        end
+                    end
+                end
+            end
+        end
+
+        scan(Tycoon)
+        scan(TempFolder)
+        task.wait(tickrate.collect)
+    end
+    notify("Auto Collect Cash: OFF")
+end
+
+--=========================== UI Controls ===========================--
+
+-- Bagian status tycoon
+do
+    local info = "Tycoon: "
+    if Tycoon then
+        info = info .. Tycoon.Name
+    else
+        info = info .. "Tidak ditemukan (pastikan sudah claim tycoon)"
+    end
+    MainTab:Label({ Title = info, Desc = "Script akan memfilter prompt berdasarkan tycoon milikmu." })
+end
+
+-- Take Order
+local ToggleTakeOrder = MainTab:Toggle({
+    Title = "Auto Take Order",
+    Desc = "Otomatis mengambil pesanan dari pelanggan",
+    Icon = "bird",
+    Type = "Checkbox",
+    Default = false,
+    Callback = function(enabled)
+        state.autoTakeOrder = enabled
+        if enabled then
+            stopThread("takeOrder")
+            threads.takeOrder = task.spawn(function()
+                -- Pastikan tycoon sudah terdeteksi
+                if not Tycoon then Tycoon = resolveTycoon() end
+                autoTakeOrderLoop()
+            end)
+        else
+            stopThread("takeOrder")
+        end
+    end
+})
+
+-- Do Order
+local ToggleDoOrder = MainTab:Toggle({
+    Title = "Auto Do Order",
+    Desc = "Otomatis proses pesanan di konter/station",
+    Icon = "clipboard",
+    Type = "Checkbox",
+    Default = false,
+    Callback = function(enabled)
+        state.autoDoOrder = enabled
+        if enabled then
+            stopThread("doOrder")
+            threads.doOrder = task.spawn(function()
+                if not Tycoon then Tycoon = resolveTycoon() end
+                autoDoOrderLoop()
+            end)
+        else
+            stopThread("doOrder")
+        end
+    end
+})
+
+-- Collect Cash
+local ToggleCollectCash = MainTab:Toggle({
+    Title = "Auto Collect Cash",
+    Desc = "Otomatis ambil uang di meja saat tersedia",
+    Icon = "sack-dollar",
+    Type = "Checkbox",
+    Default = false,
+    Callback = function(enabled)
+        state.autoCollect = enabled
+        if enabled then
+            stopThread("collect")
+            threads.collect = task.spawn(function()
+                if not Tycoon then Tycoon = resolveTycoon() end
+                autoCollectCashLoop()
+            end)
+        else
+            stopThread("collect")
+        end
+    end
+})
+
+-- Slider pengatur kecepatan
+local TakeOrderDelay = MainTab:Slider({
+    Title = "Delay Take Order (s)",
+    Desc = "Atur jeda antar-scan Auto Take Order",
+    Icon = "hourglass",
+    Default = tickrate.takeOrder,
+    Min = 0.10,
+    Max = 1.00,
+    Rounding = 2,
+    Callback = function(v)
+        tickrate.takeOrder = tonumber(v) or tickrate.takeOrder
+    end
+})
+
+local DoOrderDelay = MainTab:Slider({
+    Title = "Delay Do Order (s)",
+    Desc = "Atur jeda antar-scan Auto Do Order",
+    Icon = "hourglass",
+    Default = tickrate.doOrder,
+    Min = 0.05,
+    Max = 1.00,
+    Rounding = 2,
+    Callback = function(v)
+        tickrate.doOrder = tonumber(v) or tickrate.doOrder
+    end
+})
+
+local CollectDelay = MainTab:Slider({
+    Title = "Delay Collect Cash (s)",
+    Desc = "Atur jeda antar-scan Auto Collect Cash",
+    Icon = "hourglass",
+    Default = tickrate.collect,
+    Min = 0.10,
+    Max = 1.00,
+    Rounding = 2,
+    Callback = function(v)
+        tickrate.collect = tonumber(v) or tickrate.collect
+    end
+})
+
+--=========================== Safety Toggles ===========================--
+MainTab:Seperator("Utilities")
+
+MainTab:Button({
+    Title = "Refresh Tycoon Link",
+    Desc = "Ulang deteksi tycoon milikmu",
+    Icon = "arrows-rotate",
+    Callback = function()
+        Tycoon = resolveTycoon()
+        Surface = nil
+        if Tycoon then
+            Surface = safeWaitFor(safeWaitFor(Tycoon, "Items", 5), "Surface", 5)
+            notify("Tycoon terdeteksi: " .. Tycoon.Name)
+        else
+            notify("Tycoon belum terdeteksi. Claim dulu di game.")
+        end
+    end
+})
+
+MainTab:Button({
+    Title = "Matikan Semua",
+    Desc = "Stop semua fitur & thread",
+    Icon = "power-off",
+    Callback = function()
+        state.autoTakeOrder = false
+        state.autoDoOrder   = false
+        state.autoCollect   = false
+        stopThread("takeOrder")
+        stopThread("doOrder")
+        stopThread("collect")
+        notify("Semua fitur dimatikan.")
+    end
+})
+
+--=========================== Auto Rehook On Tycoon Claim ===========================--
+-- Jika pemain baru claim tycoon di mid-game, kita update referensi otomatis
+task.spawn(function()
+    while true do
+        if not Tycoon then
+            Tycoon = resolveTycoon()
+            if Tycoon then
+                Surface = safeWaitFor(safeWaitFor(Tycoon, "Items", 5), "Surface", 5)
+                notify("Tycoon baru terdeteksi: " .. Tycoon.Name)
+            end
+        end
+        task.wait(2)
+    end
+end)
