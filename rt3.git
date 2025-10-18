@@ -1,7 +1,7 @@
 --////////////////////////////////////////////////////////////--
--- Restaurant Tycoon 3 – Fixed Script (WindUI API Baru)
+-- Restaurant Tycoon 3 – WindUI FIXED (October 2025)
 -- Fitur: Auto Take Order | Auto Do Order | Auto Collect Cash
--- Dibuat ulang agar cocok dengan WindUI versi baru (CreateX API)
+-- Kompatibel dengan WindUI versi terbaru (pakai CreateTabGroup)
 --////////////////////////////////////////////////////////////--
 
 --=========================== UI Loader ===========================--
@@ -18,18 +18,18 @@ local Window = WindUI:CreateWindow({
     SideBarWidth = 200,
     Background = "",
     BackgroundImageTransparency = 0.42,
-    HideSearchBar = true,
+    HideSearchBar = false,
     ScrollBarEnabled = true,
 })
 
 Window:EditOpenButton({
     Title = "RT3",
     Icon = "Box",
-    CornerRadius = UDim.new(0,10),
+    CornerRadius = UDim.new(0, 10),
     StrokeThickness = 1.75,
     Color = ColorSequence.new(
-        Color3.fromRGB(111,168,220),
-        Color3.fromRGB(207,226,243)
+        Color3.fromRGB(111, 168, 220),
+        Color3.fromRGB(207, 226, 243)
     ),
     OnlyMobile = false,
     Enabled = true,
@@ -37,21 +37,26 @@ Window:EditOpenButton({
 })
 
 --=========================== Tabs ===========================--
-local MainTab = Window:CreateTab({
+local TabGroup = Window:CreateTabGroup()
+
+local MainTab = TabGroup:CreateTab({
     Title = "Main",
     Icon = "house",
-    Desc = "Main Section",
+    Desc = "Main Section"
 })
-Window:SelectTab(1)
 
 --=========================== Services ===========================--
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+
 local LocalPlayer = Players.LocalPlayer
 
+--=========================== Utility Functions ===========================--
 local function findTycoon()
-    for _, v in ipairs(Workspace:FindFirstChild("Tycoons"):GetDescendants()) do
+    local tycoons = Workspace:FindFirstChild("Tycoons")
+    if not tycoons then return nil end
+    for _, v in ipairs(tycoons:GetDescendants()) do
         if v.Name == "Player" and v:IsA("ObjectValue") and v.Value == LocalPlayer then
             return v.Parent
         end
@@ -59,10 +64,6 @@ local function findTycoon()
     return nil
 end
 
-local Tycoon = findTycoon()
-local Temp = Workspace:FindFirstChild("Temp")
-
---=========================== Helpers ===========================--
 local function firePrompt(prompt)
     if prompt and prompt:IsA("ProximityPrompt") then
         pcall(function()
@@ -71,24 +72,30 @@ local function firePrompt(prompt)
     end
 end
 
-local function isInTycoon(inst)
-    if not Tycoon then return false end
+local function isDescendantOfTycoon(inst, tycoon)
+    if not inst or not tycoon then return false end
     local p = inst
     while p do
-        if p == Tycoon then return true end
+        if p == tycoon then
+            return true
+        end
         p = p.Parent
     end
     return false
 end
 
+--=========================== Setup ===========================--
+local Tycoon = findTycoon()
+local Temp = Workspace:FindFirstChild("Temp")
+
 --=========================== AUTO TAKE ORDER ===========================--
-local takeOrderRunning = false
+local takeOrderEnabled = false
 local takeOrderThread
 
 local function startAutoTakeOrder()
-    takeOrderRunning = true
+    takeOrderEnabled = true
     takeOrderThread = task.spawn(function()
-        while takeOrderRunning do
+        while takeOrderEnabled do
             for _, ui in pairs(LocalPlayer.PlayerGui:GetChildren()) do
                 if ui.Name == "CustomerSpeechUI" and ui:FindFirstChild("Adornee") then
                     local adornee = ui:FindFirstChild("Adornee")
@@ -104,7 +111,8 @@ local function startAutoTakeOrder()
                     end
                 end
             end
-            -- Fallback: cari prompt “Take Order”
+
+            -- fallback: cari proximity prompt bertuliskan "take"
             for _, v in pairs((Temp or Workspace):GetDescendants()) do
                 if v:IsA("ProximityPrompt") and string.find(string.lower(v.ActionText or ""), "take") then
                     firePrompt(v)
@@ -116,7 +124,7 @@ local function startAutoTakeOrder()
 end
 
 local function stopAutoTakeOrder()
-    takeOrderRunning = false
+    takeOrderEnabled = false
     if takeOrderThread then
         task.cancel(takeOrderThread)
         takeOrderThread = nil
@@ -124,13 +132,13 @@ local function stopAutoTakeOrder()
 end
 
 --=========================== AUTO DO ORDER ===========================--
-local doOrderRunning = false
+local doOrderEnabled = false
 local doOrderThread
 
 local function startAutoDoOrder()
-    doOrderRunning = true
+    doOrderEnabled = true
     doOrderThread = task.spawn(function()
-        while doOrderRunning do
+        while doOrderEnabled do
             for _, v in pairs((Temp or Workspace):GetDescendants()) do
                 if v:IsA("ProximityPrompt") and string.find(string.lower(v.ActionText or ""), "order") then
                     firePrompt(v)
@@ -142,7 +150,7 @@ local function startAutoDoOrder()
 end
 
 local function stopAutoDoOrder()
-    doOrderRunning = false
+    doOrderEnabled = false
     if doOrderThread then
         task.cancel(doOrderThread)
         doOrderThread = nil
@@ -150,16 +158,16 @@ local function stopAutoDoOrder()
 end
 
 --=========================== AUTO COLLECT CASH ===========================--
-local collectCashRunning = false
+local collectCashEnabled = false
 local collectCashThread
 
 local function startAutoCollectCash()
-    collectCashRunning = true
+    collectCashEnabled = true
     collectCashThread = task.spawn(function()
-        while collectCashRunning do
+        while collectCashEnabled do
             for _, v in pairs((Temp or Workspace):GetDescendants()) do
                 if v:IsA("ProximityPrompt") and string.find(string.lower(v.ActionText or ""), "collect") then
-                    if isInTycoon(v) then
+                    if isDescendantOfTycoon(v, Tycoon) then
                         firePrompt(v)
                     end
                 end
@@ -170,7 +178,7 @@ local function startAutoCollectCash()
 end
 
 local function stopAutoCollectCash()
-    collectCashRunning = false
+    collectCashEnabled = false
     if collectCashThread then
         task.cancel(collectCashThread)
         collectCashThread = nil
@@ -178,15 +186,14 @@ local function stopAutoCollectCash()
 end
 
 --=========================== UI ELEMENTS ===========================--
-
 MainTab:CreateLabel({
-    Title = "Auto Features",
-    Desc = "Automation tools for Restaurant Tycoon 3"
+    Title = "Automation Tools",
+    Desc = "Restaurant Tycoon 3 Script by Minh, fixed by SSF"
 })
 
 MainTab:CreateToggle({
     Title = "Auto Take Order",
-    Desc = "Automatically take orders from customers",
+    Desc = "Otomatis menerima pesanan dari pelanggan.",
     Icon = "bird",
     Default = false,
     Callback = function(state)
@@ -200,7 +207,7 @@ MainTab:CreateToggle({
 
 MainTab:CreateToggle({
     Title = "Auto Do Order",
-    Desc = "Automatically process orders at counters",
+    Desc = "Otomatis memproses pesanan di konter.",
     Icon = "clipboard",
     Default = false,
     Callback = function(state)
@@ -214,7 +221,7 @@ MainTab:CreateToggle({
 
 MainTab:CreateToggle({
     Title = "Auto Collect Cash",
-    Desc = "Automatically collect cash from tables",
+    Desc = "Otomatis mengambil uang dari meja pelanggan.",
     Icon = "sack-dollar",
     Default = false,
     Callback = function(state)
@@ -228,26 +235,26 @@ MainTab:CreateToggle({
 
 MainTab:CreateButton({
     Title = "Refresh Tycoon",
-    Desc = "Reconnect to your tycoon",
+    Desc = "Cari ulang tycoon kamu di map.",
     Icon = "arrows-rotate",
     Callback = function()
         Tycoon = findTycoon()
         if Tycoon then
-            print("Tycoon ditemukan:", Tycoon.Name)
+            print("[RT3] Tycoon ditemukan:", Tycoon.Name)
         else
-            print("Belum punya tycoon, claim dulu di game.")
+            print("[RT3] Belum menemukan tycoon, claim dulu di game.")
         end
     end
 })
 
 MainTab:CreateButton({
-    Title = "Stop All",
-    Desc = "Turn off all automation features",
+    Title = "Stop Semua Fitur",
+    Desc = "Matikan semua automation aktif.",
     Icon = "power-off",
     Callback = function()
         stopAutoTakeOrder()
         stopAutoDoOrder()
         stopAutoCollectCash()
-        print("Semua fitur dimatikan.")
+        print("[RT3] Semua fitur dimatikan.")
     end
 })
