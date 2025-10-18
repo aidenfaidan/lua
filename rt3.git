@@ -1,10 +1,9 @@
 --////////////////////////////////////////////////////////////--
--- Restaurant Tycoon 3 – WindUI FIXED (October 2025)
--- Fitur: Auto Take Order | Auto Do Order | Auto Collect Cash
--- Kompatibel dengan WindUI versi terbaru (pakai CreateTabGroup)
+-- Restaurant Tycoon 3 Script (WindUI Classic API)
+-- Features: Auto Take Order | Auto Do Order | Auto Cook | Auto Collect Cash
+-- Structure preserved from original style
 --////////////////////////////////////////////////////////////--
 
---=========================== UI Loader ===========================--
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
 local Window = WindUI:CreateWindow({
@@ -12,58 +11,74 @@ local Window = WindUI:CreateWindow({
     Icon = "door-open",
     Author = "Made By Minh (Fixed by SSF)",
     Folder = "RT3Minh",
-    Size = UDim2.fromOffset(520, 360),
+    Size = UDim2.fromOffset(490, 320),
     Transparent = true,
     Theme = "Dark",
-    SideBarWidth = 200,
-    Background = "",
+    SideBarWidth = 190,
+    Background = "", -- rbxassetid only
     BackgroundImageTransparency = 0.42,
-    HideSearchBar = false,
-    ScrollBarEnabled = true,
+    HideSearchBar = true,
+    ScrollBarEnabled = false,
+    User = {
+        Enabled = false,
+        Anonymous = true,
+        Callback = function()
+            print("clicked")
+        end,
+    },
 })
 
 Window:EditOpenButton({
     Title = "RT3",
     Icon = "Box",
-    CornerRadius = UDim.new(0, 10),
+    CornerRadius = UDim.new(0,10),
     StrokeThickness = 1.75,
     Color = ColorSequence.new(
-        Color3.fromRGB(111, 168, 220),
-        Color3.fromRGB(207, 226, 243)
+        Color3.fromHex("6FA8DC"),
+        Color3.fromHex("CFE2F3")
     ),
     OnlyMobile = false,
     Enabled = true,
     Draggable = true,
 })
 
---=========================== Tabs ===========================--
-local TabGroup = Window:CreateTabGroup()
-
-local MainTab = TabGroup:CreateTab({
+-----------------------------------------------------------
+-- Tabs
+-----------------------------------------------------------
+local MainTab = Window:Tab({
     Title = "Main",
     Icon = "house",
-    Desc = "Main Section"
+    Desc = "Main Section",
+    Locked = false,
 })
 
---=========================== Services ===========================--
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
+Window:SelectTab(1)
 
-local LocalPlayer = Players.LocalPlayer
+-----------------------------------------------------------
+-- Services & Variables
+-----------------------------------------------------------
+local players = game:GetService("Players")
+local replicated_storage = game:GetService("ReplicatedStorage")
+local workspace = game:GetService("Workspace")
 
---=========================== Utility Functions ===========================--
-local function findTycoon()
-    local tycoons = Workspace:FindFirstChild("Tycoons")
-    if not tycoons then return nil end
-    for _, v in ipairs(tycoons:GetDescendants()) do
-        if v.Name == "Player" and v:IsA("ObjectValue") and v.Value == LocalPlayer then
-            return v.Parent
-        end
-    end
-    return nil
+local local_player = players.LocalPlayer
+local tycoon = nil
+local surface = nil
+local temp = workspace:FindFirstChild("Temp")
+
+for _, v in workspace:FindFirstChild("Tycoons"):GetDescendants() do
+	if v.Name == "Player" and v.Value == local_player then
+		tycoon = v.Parent
+	end
 end
 
+if tycoon then
+	surface = tycoon:WaitForChild("Items"):WaitForChild("Surface")
+end
+
+-----------------------------------------------------------
+-- Helper
+-----------------------------------------------------------
 local function firePrompt(prompt)
     if prompt and prompt:IsA("ProximityPrompt") then
         pcall(function()
@@ -72,189 +87,189 @@ local function firePrompt(prompt)
     end
 end
 
-local function isDescendantOfTycoon(inst, tycoon)
-    if not inst or not tycoon then return false end
-    local p = inst
-    while p do
-        if p == tycoon then
+local function isInTycoon(inst)
+    if not tycoon then return false end
+    local parent = inst
+    while parent do
+        if parent == tycoon then
             return true
         end
-        p = p.Parent
+        parent = parent.Parent
     end
     return false
 end
 
---=========================== Setup ===========================--
-local Tycoon = findTycoon()
-local Temp = Workspace:FindFirstChild("Temp")
+-----------------------------------------------------------
+-- AUTO TAKE ORDER
+-----------------------------------------------------------
+local takeOrderRunning = false
+local takeOrderThread = nil
 
---=========================== AUTO TAKE ORDER ===========================--
-local takeOrderEnabled = false
-local takeOrderThread
+local ToggleTakeOrder = MainTab:Toggle({
+	Title = "Auto Take Order",
+	Desc = "Tự động nhận order từ khách",
+	Icon = "bird",
+	Type = "Checkbox",
+	Default = false,
+	Callback = function(state)
+		takeOrderRunning = state
+		if takeOrderRunning then
+			takeOrderThread = task.spawn(function()
+				while takeOrderRunning do
+					for _, ui in pairs(local_player.PlayerGui:GetChildren()) do
+						if ui.Name == "CustomerSpeechUI" and ui:FindFirstChild("Adornee") then
+							local adornee = ui:FindFirstChild("Adornee")
+							local group = adornee.Parent and adornee.Parent.Parent and adornee.Parent.Parent.Name
+							local customer = adornee.Parent and adornee.Parent.Name
+							if group and customer and tycoon then
+								replicated_storage:WaitForChild("Events"):WaitForChild("Restaurant"):WaitForChild("TaskCompleted"):FireServer({
+									GroupId = tostring(group),
+									Tycoon = tycoon,
+									Name = "TakeOrder",
+									CustomerId = tostring(customer)
+								})
+							end
+						end
+					end
 
-local function startAutoTakeOrder()
-    takeOrderEnabled = true
-    takeOrderThread = task.spawn(function()
-        while takeOrderEnabled do
-            for _, ui in pairs(LocalPlayer.PlayerGui:GetChildren()) do
-                if ui.Name == "CustomerSpeechUI" and ui:FindFirstChild("Adornee") then
-                    local adornee = ui:FindFirstChild("Adornee")
-                    local group = adornee.Parent and adornee.Parent.Parent and adornee.Parent.Parent.Name
-                    local customer = adornee.Parent and adornee.Parent.Name
-                    if group and customer and Tycoon then
-                        ReplicatedStorage.Events.Restaurant.TaskCompleted:FireServer({
-                            GroupId = tostring(group),
-                            Tycoon = Tycoon,
-                            Name = "TakeOrder",
-                            CustomerId = tostring(customer)
-                        })
-                    end
-                end
-            end
+					-- fallback: cari prompt “take order”
+					if temp then
+						for _, v in temp:GetDescendants() do
+							if v:IsA("ProximityPrompt") and string.find(string.lower(v.ActionText or ""), "take") then
+								firePrompt(v)
+							end
+						end
+					end
 
-            -- fallback: cari proximity prompt bertuliskan "take"
-            for _, v in pairs((Temp or Workspace):GetDescendants()) do
-                if v:IsA("ProximityPrompt") and string.find(string.lower(v.ActionText or ""), "take") then
-                    firePrompt(v)
-                end
-            end
-            task.wait(0.5)
-        end
-    end)
-end
-
-local function stopAutoTakeOrder()
-    takeOrderEnabled = false
-    if takeOrderThread then
-        task.cancel(takeOrderThread)
-        takeOrderThread = nil
-    end
-end
-
---=========================== AUTO DO ORDER ===========================--
-local doOrderEnabled = false
-local doOrderThread
-
-local function startAutoDoOrder()
-    doOrderEnabled = true
-    doOrderThread = task.spawn(function()
-        while doOrderEnabled do
-            for _, v in pairs((Temp or Workspace):GetDescendants()) do
-                if v:IsA("ProximityPrompt") and string.find(string.lower(v.ActionText or ""), "order") then
-                    firePrompt(v)
-                end
-            end
-            task.wait(0.25)
-        end
-    end)
-end
-
-local function stopAutoDoOrder()
-    doOrderEnabled = false
-    if doOrderThread then
-        task.cancel(doOrderThread)
-        doOrderThread = nil
-    end
-end
-
---=========================== AUTO COLLECT CASH ===========================--
-local collectCashEnabled = false
-local collectCashThread
-
-local function startAutoCollectCash()
-    collectCashEnabled = true
-    collectCashThread = task.spawn(function()
-        while collectCashEnabled do
-            for _, v in pairs((Temp or Workspace):GetDescendants()) do
-                if v:IsA("ProximityPrompt") and string.find(string.lower(v.ActionText or ""), "collect") then
-                    if isDescendantOfTycoon(v, Tycoon) then
-                        firePrompt(v)
-                    end
-                end
-            end
-            task.wait(0.5)
-        end
-    end)
-end
-
-local function stopAutoCollectCash()
-    collectCashEnabled = false
-    if collectCashThread then
-        task.cancel(collectCashThread)
-        collectCashThread = nil
-    end
-end
-
---=========================== UI ELEMENTS ===========================--
-MainTab:CreateLabel({
-    Title = "Automation Tools",
-    Desc = "Restaurant Tycoon 3 Script by Minh, fixed by SSF"
+					task.wait(0.5)
+				end
+			end)
+		elseif takeOrderThread then
+			task.cancel(takeOrderThread)
+		end
+	end
 })
 
-MainTab:CreateToggle({
-    Title = "Auto Take Order",
-    Desc = "Otomatis menerima pesanan dari pelanggan.",
-    Icon = "bird",
-    Default = false,
-    Callback = function(state)
-        if state then
-            startAutoTakeOrder()
-        else
-            stopAutoTakeOrder()
-        end
-    end
+-----------------------------------------------------------
+-- AUTO DO ORDER
+-----------------------------------------------------------
+local orderSettings = {
+	auto_do_order = false,
+	toggle_delay = 0.25,
+}
+
+local autoDoOrderThread = nil
+
+local ToggleDoOrder = MainTab:Toggle({
+	Title = "Auto Do Order",
+	Desc = "Tự động nhận đơn ở quầy",
+	Icon = "clipboard",
+	Type = "Checkbox",
+	Default = false,
+	Callback = function(state)
+		orderSettings.auto_do_order = state
+		if state then
+			autoDoOrderThread = task.spawn(function()
+				while orderSettings.auto_do_order do
+					if temp then
+						for _, v in temp:GetDescendants() do
+							if v:IsA("ProximityPrompt") and string.find(string.lower(v.ActionText or ""), "order") then
+								firePrompt(v)
+								task.wait()
+							end
+						end
+					end
+					task.wait(orderSettings.toggle_delay)
+				end
+			end)
+		elseif autoDoOrderThread then
+			task.cancel(autoDoOrderThread)
+		end
+	end
 })
 
-MainTab:CreateToggle({
-    Title = "Auto Do Order",
-    Desc = "Otomatis memproses pesanan di konter.",
-    Icon = "clipboard",
-    Default = false,
-    Callback = function(state)
-        if state then
-            startAutoDoOrder()
-        else
-            stopAutoDoOrder()
-        end
-    end
+-----------------------------------------------------------
+-- AUTO COOK
+-----------------------------------------------------------
+local cookSettings = {
+	auto_cook = false,
+	toggle_delay = 0.25,
+}
+
+local autoCookThread = nil
+
+local ToggleCook = MainTab:Toggle({
+	Title = "Auto Cook",
+	Desc = "Tự động nấu ăn",
+	Icon = "flame",
+	Type = "Checkbox",
+	Default = false,
+	Callback = function(state)
+		cookSettings.auto_cook = state
+		if state then
+			autoCookThread = task.spawn(function()
+				local oven = nil
+				if surface then
+					for _, v in surface:GetDescendants() do
+						if v.Name:find("Oven") then
+							oven = v.Parent
+							break
+						end
+					end
+				end
+				while cookSettings.auto_cook do
+					if oven then
+						local cookEvents = replicated_storage:FindFirstChild("Events")
+						if cookEvents then
+							local cookModule = cookEvents:FindFirstChild("Cook")
+							if cookModule then
+								local cookInput = cookModule:FindFirstChild("CookInputRequested")
+								if cookInput then
+									cookInput:FireServer("Interact", oven, "Oven")
+								end
+							end
+						end
+					end
+					task.wait(cookSettings.toggle_delay)
+				end
+			end)
+		elseif autoCookThread then
+			task.cancel(autoCookThread)
+		end
+	end
 })
 
-MainTab:CreateToggle({
-    Title = "Auto Collect Cash",
-    Desc = "Otomatis mengambil uang dari meja pelanggan.",
-    Icon = "sack-dollar",
-    Default = false,
-    Callback = function(state)
-        if state then
-            startAutoCollectCash()
-        else
-            stopAutoCollectCash()
-        end
-    end
-})
+-----------------------------------------------------------
+-- AUTO COLLECT CASH
+-----------------------------------------------------------
+local collectCashRunning = false
+local collectCashThread = nil
 
-MainTab:CreateButton({
-    Title = "Refresh Tycoon",
-    Desc = "Cari ulang tycoon kamu di map.",
-    Icon = "arrows-rotate",
-    Callback = function()
-        Tycoon = findTycoon()
-        if Tycoon then
-            print("[RT3] Tycoon ditemukan:", Tycoon.Name)
-        else
-            print("[RT3] Belum menemukan tycoon, claim dulu di game.")
-        end
-    end
-})
-
-MainTab:CreateButton({
-    Title = "Stop Semua Fitur",
-    Desc = "Matikan semua automation aktif.",
-    Icon = "power-off",
-    Callback = function()
-        stopAutoTakeOrder()
-        stopAutoDoOrder()
-        stopAutoCollectCash()
-        print("[RT3] Semua fitur dimatikan.")
-    end
+local ToggleCollectCash = MainTab:Toggle({
+	Title = "Auto Collect Cash",
+	Desc = "Tự động thu tiền khách đã makan",
+	Icon = "sack-dollar",
+	Type = "Checkbox",
+	Default = false,
+	Callback = function(state)
+		collectCashRunning = state
+		if collectCashRunning then
+			collectCashThread = task.spawn(function()
+				while collectCashRunning do
+					if temp then
+						for _, v in temp:GetDescendants() do
+							if v:IsA("ProximityPrompt") and string.find(string.lower(v.ActionText or ""), "collect") then
+								if isInTycoon(v) then
+									firePrompt(v)
+								end
+							end
+						end
+					end
+					task.wait(0.5)
+				end
+			end)
+		elseif collectCashThread then
+			task.cancel(collectCashThread)
+		end
+	end
 })
