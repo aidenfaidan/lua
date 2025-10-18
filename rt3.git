@@ -1,15 +1,9 @@
---////////////////////////////////////////////////////////////--
--- Restaurant Tycoon 3 Script (WindUI Classic API)
--- Features: Auto Take Order | Auto Do Order | Auto Cook | Auto Collect Cash
--- Structure preserved from original style
---////////////////////////////////////////////////////////////--
-
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
 local Window = WindUI:CreateWindow({
     Title = "Restaurant Tycoon 3",
     Icon = "door-open",
-    Author = "Made By Minh (Fixed by SSF)",
+    Author = "Made By Minh",
     Folder = "RT3Minh",
     Size = UDim2.fromOffset(490, 320),
     Transparent = true,
@@ -33,8 +27,8 @@ Window:EditOpenButton({
     Icon = "Box",
     CornerRadius = UDim.new(0,10),
     StrokeThickness = 1.75,
-    Color = ColorSequence.new(
-        Color3.fromHex("6FA8DC"),
+    Color = ColorSequence.new( -- gradient
+        Color3.fromHex("6FA8DC"), 
         Color3.fromHex("CFE2F3")
     ),
     OnlyMobile = false,
@@ -42,9 +36,8 @@ Window:EditOpenButton({
     Draggable = true,
 })
 
------------------------------------------------------------
--- Tabs
------------------------------------------------------------
+-----------------------------------------------------------Tabs--------------------------------------------------------------
+
 local MainTab = Window:Tab({
     Title = "Main",
     Icon = "house",
@@ -52,11 +45,10 @@ local MainTab = Window:Tab({
     Locked = false,
 })
 
-Window:SelectTab(1)
+Window:SelectTab(1) -- Number of Tab
 
------------------------------------------------------------
--- Services & Variables
------------------------------------------------------------
+
+----------------------------------------------------------Main------------------------------------------------------------------
 local players = game:GetService("Players")
 local replicated_storage = game:GetService("ReplicatedStorage")
 local workspace = game:GetService("Workspace")
@@ -76,32 +68,9 @@ if tycoon then
 	surface = tycoon:WaitForChild("Items"):WaitForChild("Surface")
 end
 
------------------------------------------------------------
--- Helper
------------------------------------------------------------
-local function firePrompt(prompt)
-    if prompt and prompt:IsA("ProximityPrompt") then
-        pcall(function()
-            fireproximityprompt(prompt)
-        end)
-    end
-end
-
-local function isInTycoon(inst)
-    if not tycoon then return false end
-    local parent = inst
-    while parent do
-        if parent == tycoon then
-            return true
-        end
-        parent = parent.Parent
-    end
-    return false
-end
-
------------------------------------------------------------
+-----------------------------
 -- AUTO TAKE ORDER
------------------------------------------------------------
+-----------------------------
 local takeOrderRunning = false
 local takeOrderThread = nil
 
@@ -131,16 +100,6 @@ local ToggleTakeOrder = MainTab:Toggle({
 							end
 						end
 					end
-
-					-- fallback: cari prompt “take order”
-					if temp then
-						for _, v in temp:GetDescendants() do
-							if v:IsA("ProximityPrompt") and string.find(string.lower(v.ActionText or ""), "take") then
-								firePrompt(v)
-							end
-						end
-					end
-
 					task.wait(0.5)
 				end
 			end)
@@ -150,9 +109,9 @@ local ToggleTakeOrder = MainTab:Toggle({
 	end
 })
 
------------------------------------------------------------
+-----------------------------
 -- AUTO DO ORDER
------------------------------------------------------------
+-----------------------------
 local orderSettings = {
 	auto_do_order = false,
 	toggle_delay = 0.25,
@@ -173,8 +132,8 @@ local ToggleDoOrder = MainTab:Toggle({
 				while orderSettings.auto_do_order do
 					if temp then
 						for _, v in temp:GetDescendants() do
-							if v:IsA("ProximityPrompt") and string.find(string.lower(v.ActionText or ""), "order") then
-								firePrompt(v)
+							if v:IsA("ProximityPrompt") then
+								fireproximityprompt(v)
 								task.wait()
 							end
 						end
@@ -188,9 +147,9 @@ local ToggleDoOrder = MainTab:Toggle({
 	end
 })
 
------------------------------------------------------------
+-----------------------------
 -- AUTO COOK
------------------------------------------------------------
+-----------------------------
 local cookSettings = {
 	auto_cook = false,
 	toggle_delay = 0.25,
@@ -239,15 +198,15 @@ local ToggleCook = MainTab:Toggle({
 	end
 })
 
------------------------------------------------------------
+-----------------------------
 -- AUTO COLLECT CASH
------------------------------------------------------------
+-----------------------------
 local collectCashRunning = false
 local collectCashThread = nil
 
 local ToggleCollectCash = MainTab:Toggle({
 	Title = "Auto Collect Cash",
-	Desc = "Tự động thu tiền khách đã makan",
+	Desc = "Tự động thu tiền từ khách yang sudah selesai makan",
 	Icon = "sack-dollar",
 	Type = "Checkbox",
 	Default = false,
@@ -259,9 +218,8 @@ local ToggleCollectCash = MainTab:Toggle({
 					if temp then
 						for _, v in temp:GetDescendants() do
 							if v:IsA("ProximityPrompt") and string.find(string.lower(v.ActionText or ""), "collect") then
-								if isInTycoon(v) then
-									firePrompt(v)
-								end
+								fireproximityprompt(v)
+								task.wait()
 							end
 						end
 					end
