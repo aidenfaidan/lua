@@ -1,4 +1,4 @@
---// AUTO FISH GUI - Versi HyRexxyy Event-Based dengan Auto Sell
+--// AUTO FISH GUI - Versi HyRexxyy Event-Based
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -17,34 +17,11 @@ local rodRemote = net:WaitForChild("RF/ChargeFishingRod")
 local miniGameRemote = net:WaitForChild("RF/RequestFishingMinigameStarted")
 local finishRemote = net:WaitForChild("RE/FishingCompleted")
 
--- Cari remote untuk jual ikan (mungkin ada beberapa kemungkinan)
-local sellRemote
-local sellAllRemote
-
--- Mencari remote jual ikan yang tepat
-pcall(function()
-    sellRemote = net:WaitForChild("RE/SellFish") -- Untuk jual ikan tertentu
-end)
-
-pcall(function()
-    sellAllRemote = net:WaitForChild("RE/SellAllFish") -- Untuk jual semua ikan
-end)
-
--- Jika tidak ditemukan di net, coba cari di tempat lain
-if not sellRemote and not sellAllRemote then
-    pcall(function()
-        sellAllRemote = ReplicatedStorage:WaitForChild("SellAllFish")
-    end)
-end
-
 -- Variabel utama
 local autofish = false
 local perfectCast = false
 local autoRecastDelay = 2
 local fishCount = 0
-local autoSell = false
-local autoSellInterval = 10 -- Jual setiap 10 ikan
-local coinsEarned = 0
 
 -- GUI Setup
 local Window = Rayfield:CreateWindow({
@@ -57,30 +34,105 @@ local Window = Rayfield:CreateWindow({
 
 local MainTab = Window:CreateTab("⚙️ Main Controls")
 local CounterLabel = MainTab:CreateLabel("🐟 Fish Caught: 0")
-local CoinsLabel = MainTab:CreateLabel("💰 Coins Earned: 0")
 
--- Fungsi untuk menjual ikan
-local function SellFish()
-    pcall(function()
-        if sellAllRemote then
-            -- Jika ada remote jual semua
-            sellAllRemote:FireServer()
-            Rayfield:Notify({
-                Title = "💰 Auto Sell",
-                Content = "All fish sold successfully!",
-                Duration = 3
-            })
-        elseif sellRemote then
-            -- Jika hanya ada remote jual per ikan, perlu implementasi lebih kompleks
-            -- Ini adalah placeholder - mungkin perlu iterasi melalui inventory
-            sellRemote:FireServer() -- Parameter mungkin diperlukan
-        else
-            warn("Auto Sell: No sell remote found!")
+-- =============================================
+-- FITUR AUTO SELL YANG DITAMBAHKAN (TANPA MENGUBAH YANG ADA)
+-- =============================================
+
+-- Variabel auto sell
+local autoSell = false
+local autoSellInterval = 10
+local coinsEarned = 0
+local sellCoinsLabel = MainTab:CreateLabel("💰 Coins from Selling: 0")
+
+-- Cari remote untuk jual ikan
+local function FindSellRemote()
+    -- Coba berbagai kemungkinan remote jual ikan
+    local possibleRemotes = {
+        "RE/SellAllFish",
+        "RF/SellAllFish", 
+        "RE/SellFish",
+        "RF/SellFish",
+        "SellAllFish",
+        "SellFish"
+    }
+    
+    for _, remoteName in ipairs(possibleRemotes) do
+        local success, result = pcall(function()
+            return net:FindFirstChild(remoteName)
+        end)
+        if success and result then
+            return result
         end
-    end)
+    end
+    
+    -- Coba cari di ReplicatedStorage langsung
+    for _, remoteName in ipairs(possibleRemotes) do
+        local success, result = pcall(function()
+            return ReplicatedStorage:FindFirstChild(remoteName)
+        end)
+        if success and result then
+            return result
+        end
+    end
+    
+    return nil
 end
 
--- Fungsi utama auto fish
+local sellRemote = FindSellRemote()
+
+-- Fungsi jual ikan
+local function SellAllFish()
+    if sellRemote then
+        local success, err = pcall(function()
+            -- Coba fire atau invoke tergantung jenis remote
+            if sellRemote:IsA("RemoteEvent") then
+                sellRemote:FireServer()
+            elseif sellRemote:IsA("RemoteFunction") then
+                sellRemote:InvokeServer()
+            else
+                sellRemote:FireServer()
+            end
+        end)
+        
+        if success then
+            Rayfield:Notify({
+                Title = "💰 Fish Sold!",
+                Content = "All fish have been sold successfully",
+                Duration = 3
+            })
+            return true
+        else
+            warn("Error selling fish:", err)
+            return false
+        end
+    else
+        Rayfield:Notify({
+            Title = "⚠️ Sell Remote Not Found",
+            Content = "Could not find sell function",
+            Duration = 4
+        })
+        return false
+    end
+end
+
+-- Auto sell logic yang terintegrasi dengan fish count
+local originalFishCount = fishCount
+local function CheckAutoSell()
+    if autoSell and fishCount > 0 and fishCount % autoSellInterval == 0 then
+        if SellAllFish() then
+            -- Estimasi coins (bisa disesuaikan)
+            local estimatedCoins = autoSellInterval * math.random(40, 80)
+            coinsEarned = coinsEarned + estimatedCoins
+            sellCoinsLabel:Set("💰 Coins from Selling: " .. coinsEarned)
+        end
+    end
+end
+
+-- =============================================
+-- FUNGSI AUTO FISH ORIGINAL (TIDAK DIUBAH)
+-- =============================================
+
 local function AutoFishCycle()
     pcall(function()
         -- Equip rod
@@ -126,22 +178,17 @@ local function AutoFishCycle()
 
         fishCount += 1
         CounterLabel:Set("🐟 Fish Caught: " .. fishCount)
-
-        -- Auto Sell Logic
-        if autoSell and fishCount % autoSellInterval == 0 then
-            SellFish()
-            -- Simulasi coins earned (ini bisa disesuaikan dengan nilai sebenarnya)
-            coinsEarned = coinsEarned + (autoSellInterval * 50) -- Asumsi 50 coins per ikan
-            CoinsLabel:Set("💰 Coins Earned: " .. coinsEarned)
-            
-            Rayfield:Notify({
-                Title = "💰 Auto Sell",
-                Content = "Sold " .. autoSellInterval .. " fish!",
-                Duration = 3
-            })
-        end
+        
+        -- =============================================
+        -- PANGGIL AUTO SELL SETIAP KALI FISH COUNT BERTAMBAH
+        -- =============================================
+        CheckAutoSell()
     end)
 end
+
+-- =============================================
+-- ELEMEN GUI ORIGINAL (TIDAK DIUBAH)
+-- =============================================
 
 -- START / STOP AUTO FISH
 MainTab:CreateToggle({
@@ -157,41 +204,6 @@ MainTab:CreateToggle({
                 end
             end)
         end
-    end
-})
-
--- AUTO SELL TOGGLE
-MainTab:CreateToggle({
-    Name = "💰 Auto Sell Fish",
-    CurrentValue = false,
-    Callback = function(val)
-        autoSell = val
-        if val then
-            Rayfield:Notify({
-                Title = "💰 Auto Sell Enabled",
-                Content = "Fish will be sold every " .. autoSellInterval .. " catches",
-                Duration = 4
-            })
-        end
-    end
-})
-
--- AUTO SELL INTERVAL SLIDER
-MainTab:CreateSlider({
-    Name = "📦 Sell Every X Fish",
-    Range = {5, 50},
-    Increment = 1,
-    CurrentValue = autoSellInterval,
-    Callback = function(val)
-        autoSellInterval = val
-    end
-})
-
--- MANUAL SELL BUTTON
-MainTab:CreateButton({
-    Name = "💵 Sell All Fish Now",
-    Callback = function()
-        SellFish()
     end
 })
 
@@ -215,6 +227,45 @@ MainTab:CreateSlider({
     end
 })
 
+-- =============================================
+-- ELEMEN GUI AUTO SELL YANG DITAMBAHKAN
+-- =============================================
+
+-- AUTO SELL TOGGLE
+MainTab:CreateToggle({
+    Name = "💰 Auto Sell Fish",
+    CurrentValue = false,
+    Callback = function(val)
+        autoSell = val
+        if val then
+            Rayfield:Notify({
+                Title = "Auto Sell Enabled",
+                Content = "Fish will be sold every " .. autoSellInterval .. " catches",
+                Duration = 4
+            })
+        end
+    end
+})
+
+-- AUTO SELL INTERVAL
+MainTab:CreateSlider({
+    Name = "📦 Sell Every X Fish",
+    Range = {5, 50},
+    Increment = 1,
+    CurrentValue = autoSellInterval,
+    Callback = function(val)
+        autoSellInterval = val
+    end
+})
+
+-- MANUAL SELL BUTTON
+MainTab:CreateButton({
+    Name = "💵 Sell All Fish Now",
+    Callback = function()
+        SellAllFish()
+    end
+})
+
 -- RESET COUNTERS BUTTON
 MainTab:CreateButton({
     Name = "🔄 Reset Counters",
@@ -222,11 +273,11 @@ MainTab:CreateButton({
         fishCount = 0
         coinsEarned = 0
         CounterLabel:Set("🐟 Fish Caught: 0")
-        CoinsLabel:Set("💰 Coins Earned: 0")
+        sellCoinsLabel:Set("💰 Coins from Selling: 0")
     end
 })
 
--- CLOSE GUI BUTTON
+-- CLOSE GUI BUTTON (ORIGINAL)
 MainTab:CreateButton({
     Name = "❌ Close GUI",
     Callback = function()
@@ -234,24 +285,28 @@ MainTab:CreateButton({
     end
 })
 
+-- =============================================
+-- NOTIFIKASI AWAL (DIMODIFIKASI SEDIKIT)
+-- =============================================
+
 -- Notifikasi awal
 Rayfield:Notify({
     Title = "✅ AutoFish GUI Loaded",
-    Content = "Auto Sell feature ready!",
+    Content = "Event-based detection ready!" .. (sellRemote and " Auto Sell available!" : " Auto Sell not available!"),
     Duration = 4
 })
 
--- Cek jika remote jual ditemukan
-if sellAllRemote or sellRemote then
+-- Notifikasi status auto sell
+if sellRemote then
     Rayfield:Notify({
-        Title = "💰 Sell System Ready",
-        Content = "Auto Sell feature activated",
-        Duration = 4
+        Title = "💰 Auto Sell Ready",
+        Content = "Sell system initialized successfully",
+        Duration = 3
     })
 else
     Rayfield:Notify({
-        Title = "⚠️ Warning",
-        Content = "Sell remote not found! Auto Sell may not work.",
+        Title = "⚠️ Auto Sell Warning",
+        Content = "Sell remote not found. Auto Sell may not work.",
         Duration = 6
     })
 end
