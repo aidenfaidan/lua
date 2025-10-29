@@ -36,6 +36,8 @@ local lastNotificationTime = 0
 local notificationCooldown = 300 -- 5 menit
 local rareFishCount = 0
 local legendaryFishCount = 0
+local autoReportEnabled = false
+local reportInterval = 1800 -- 30 menit
 
 -- Konfigurasi Auto Sell
 local AUTO_SELL_THRESHOLD = 60 -- Jual ketika ikan non-favorit > 60
@@ -45,7 +47,8 @@ local AUTO_SELL_DELAY = 60 -- Delay minimum antara penjualan (detik)
 local RARE_FISH = {
     "Shark", "Great White Shark", "Whale Shark", "Ghost Shark", 
     "Kraken", "Megalodon", "Leviathan", "Dragon Fish",
-    "Golden Fish", "Rainbow Fish", "Crystal Fish"
+    "Golden Fish", "Rainbow Fish", "Crystal Fish", "Dark Tentacle",
+    "Charmed Tang"
 }
 
 -- Data Teleport dari script kedua
@@ -81,6 +84,11 @@ local TeleportTab = Window:CreateTab("🌍 Teleport")
 local UtilityTab = Window:CreateTab("🔧 Utility")
 local AutoHookTab = Window:CreateTab("🤖 Auto Hook & Telegram")
 local CounterLabel = MainTab:CreateLabel("🐟 Fish Caught: 0")
+
+-- ================= VARIABEL GLOBAL UNTUK LABELS =================
+local RareFishLabel
+local LegendaryFishLabel
+local TotalFishLabel
 
 -- ================= FUNGSI TELEPORT =================
 
@@ -211,11 +219,6 @@ end
 -- Fungsi kirim notifikasi ke Telegram (FIXED VERSION)
 local function SendTelegramNotification(message)
     if not telegramBotEnabled or telegramBotToken == "" or telegramChatID == "" then
-        Rayfield:Notify({
-            Title = "❌ Telegram Config",
-            Content = "Bot Token or Chat ID is missing!",
-            Duration = 3
-        })
         return false
     end
     
@@ -231,60 +234,12 @@ local function SendTelegramNotification(message)
     if success then
         -- Cek jika response mengandung "ok":true
         if string.find(result, '"ok":true') then
-            Rayfield:Notify({
-                Title = "✅ Telegram Sent",
-                Content = "Notification delivered successfully!",
-                Duration = 3
-            })
             return true
         else
-            Rayfield:Notify({
-                Title = "❌ Telegram Error",
-                Content = "API returned error",
-                Duration = 3
-            })
             return false
         end
     else
-        -- Method 2: Fallback menggunakan syn.request
-        local success2, result2 = pcall(function()
-            local data = {
-                chat_id = telegramChatID,
-                text = message,
-                parse_mode = "HTML"
-            }
-            
-            local jsonData = HttpService:JSONEncode(data)
-            
-            if syn and syn.request then
-                local response = syn.request({
-                    Url = "https://api.telegram.org/bot" .. telegramBotToken .. "/sendMessage",
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "application/json"
-                    },
-                    Body = jsonData
-                })
-                return response
-            end
-            return nil
-        end)
-        
-        if success2 and result2 and result2.Success then
-            Rayfield:Notify({
-                Title = "✅ Telegram Sent",
-                Content = "Notification delivered (method 2)!",
-                Duration = 3
-            })
-            return true
-        else
-            Rayfield:Notify({
-                Title = "❌ Telegram Failed",
-                Content = "Please check internet connection",
-                Duration = 3
-            })
-            return false
-        end
+        return false
     end
 end
 
@@ -300,11 +255,19 @@ local function IsRareFish(fishName)
     return false
 end
 
--- Fungsi auto hook untuk ikan rare
+-- Variabel untuk koneksi auto hook
+local autoHookConnection = nil
+
+-- Fungsi auto hook untuk ikan rare (FIXED)
 local function SetupAutoHook()
-    -- Monitor fishing results
-    local connection
-    connection = finishRemote.OnClientEvent:Connect(function(result)
+    -- Hapus koneksi lama jika ada
+    if autoHookConnection then
+        autoHookConnection:Disconnect()
+        autoHookConnection = nil
+    end
+    
+    -- Buat koneksi baru
+    autoHookConnection = finishRemote.OnClientEvent:Connect(function(result)
         if not autoHookEnabled then return end
         
         pcall(function()
@@ -329,8 +292,9 @@ local function SetupAutoHook()
                                        "🕒 Time: " .. os.date("%X") .. "\n" ..
                                        "🔗 Job ID: " .. game.JobId
                         
-                        SendTelegramNotification(message)
-                        lastNotificationTime = os.time()
+                        if SendTelegramNotification(message) then
+                            lastNotificationTime = os.time()
+                        end
                     end
                     
                     Rayfield:Notify({
@@ -342,8 +306,6 @@ local function SetupAutoHook()
             end
         end)
     end)
-    
-    return connection
 end
 
 -- Fungsi status report ke Telegram
@@ -365,7 +327,31 @@ local function SendStatusReport()
                    "🕒 Uptime: " .. os.date("%X") .. "\n" ..
                    "🔗 Job ID: " .. game.JobId
     
-    SendTelegramNotification(message)
+    if SendTelegramNotification(message) then
+        Rayfield:Notify({
+            Title = "✅ Status Report Sent",
+            Content = "Report delivered to Telegram!",
+            Duration = 3
+        })
+    else
+        Rayfield:Notify({
+            Title = "❌ Send Failed",
+            Content = "Failed to send status report",
+            Duration = 3
+        })
+    end
+end
+
+-- Fungsi auto report berdasarkan waktu
+local function StartAutoReport()
+    task.spawn(function()
+        while autoReportEnabled do
+            task.wait(reportInterval)
+            if telegramBotEnabled and autoReportEnabled then
+                SendStatusReport()
+            end
+        end
+    end)
 end
 
 -- Fungsi test koneksi Telegram (FIXED)
@@ -386,7 +372,19 @@ local function TestTelegramConnection()
                    "🕒 Time: " .. os.date("%X") .. "\n" ..
                    "🔗 Job ID: " .. game.JobId
     
-    SendTelegramNotification(message)
+    if SendTelegramNotification(message) then
+        Rayfield:Notify({
+            Title = "✅ Telegram Connected",
+            Content = "Test message sent successfully!",
+            Duration = 3
+        })
+    else
+        Rayfield:Notify({
+            Title = "❌ Connection Failed",
+            Content = "Failed to send test message",
+            Duration = 3
+        })
+    end
 end
 
 -- ================= TAB TELEPORT =================
@@ -542,13 +540,9 @@ UtilityTab:CreateButton({
 
 local TelegramConfigSection = AutoHookTab:CreateSection("📱 Telegram Bot Configuration")
 
--- Pre-set values untuk memudahkan
-telegramBotToken = "8276216292:AAHgfmcuWsqEai6wPf5KDcFABfo-_4R9_u"
-telegramChatID = "6420726459"
-
 local TelegramTokenInput = AutoHookTab:CreateInput({
     Name = "Bot Token",
-    PlaceholderText = telegramBotToken,
+    PlaceholderText = "Enter Bot Token",
     RemoveTextAfterFocusLost = false,
     Callback = function(Text)
         telegramBotToken = Text
@@ -557,7 +551,7 @@ local TelegramTokenInput = AutoHookTab:CreateInput({
 
 local TelegramChatInput = AutoHookTab:CreateInput({
     Name = "Chat ID", 
-    PlaceholderText = telegramChatID,
+    PlaceholderText = "Enter Chat ID",
     RemoveTextAfterFocusLost = false,
     Callback = function(Text)
         telegramChatID = Text
@@ -586,6 +580,10 @@ AutoHookTab:CreateToggle({
                 Duration = 3
             })
         else
+            if autoHookConnection then
+                autoHookConnection:Disconnect()
+                autoHookConnection = nil
+            end
             Rayfield:Notify({
                 Title = "❌ Auto Hook Disabled",
                 Content = "Rare fish detection turned off",
@@ -628,6 +626,28 @@ AutoHookTab:CreateSlider({
     end
 })
 
+AutoHookTab:CreateToggle({
+    Name = "⏱️ Auto Report Every 30 Minutes",
+    CurrentValue = false,
+    Callback = function(val)
+        autoReportEnabled = val
+        if val then
+            StartAutoReport()
+            Rayfield:Notify({
+                Title = "✅ Auto Report Enabled",
+                Content = "Status report will be sent every 30 minutes",
+                Duration = 3
+            })
+        else
+            Rayfield:Notify({
+                Title = "❌ Auto Report Disabled",
+                Content = "Auto status report turned off",
+                Duration = 3
+            })
+        end
+    end
+})
+
 AutoHookTab:CreateButton({
     Name = "📊 Send Status Report Now",
     Callback = function()
@@ -637,19 +657,24 @@ AutoHookTab:CreateButton({
 
 local StatsSection = AutoHookTab:CreateSection("📈 Fishing Statistics")
 
-local RareFishLabel = AutoHookTab:CreateLabel("🌟 Rare Fish Caught: 0")
-local LegendaryFishLabel = AutoHookTab:CreateLabel("⚡ Legendary Fish: 0")
+-- Inisialisasi labels
+RareFishLabel = AutoHookTab:CreateLabel("🌟 Rare Fish Caught: 0")
+LegendaryFishLabel = AutoHookTab:CreateLabel("⚡ Legendary Fish: 0")
+TotalFishLabel = AutoHookTab:CreateLabel("🎣 Total Fish: 0")
 
 AutoHookTab:CreateButton({
     Name = "🔄 Reset Fish Counters",
     Callback = function()
         rareFishCount = 0
         legendaryFishCount = 0
+        fishCount = 0
         RareFishLabel:Set("🌟 Rare Fish Caught: 0")
         LegendaryFishLabel:Set("⚡ Legendary Fish: 0")
+        TotalFishLabel:Set("🎣 Total Fish: 0")
+        CounterLabel:Set("🐟 Fish Caught: 0")
         Rayfield:Notify({
             Title = "✅ Counters Reset",
-            Content = "Fish counters have been reset",
+            Content = "All fish counters have been reset",
             Duration = 3
         })
     end
@@ -699,19 +724,14 @@ local function startAutoSell()
     end)
 end
 
--- Fungsi mendapatkan net folder
-local function getNetFolder() 
-    return net 
-end
+-- ================= FUNGSI AUTO FISH (FIXED) =================
 
--- ================= FUNGSI AUTO FISH =================
-
--- Fungsi utama auto fish
+-- Fungsi utama auto fish (FIXED)
 local function AutoFishCycle()
     pcall(function()
         -- Equip rod
         equipRemote:FireServer(1)
-        task.wait(0.1)
+        task.wait(0.5)
 
         -- Charge rod
         local timestamp = perfectCast and 9999999999 or (tick() + math.random())
@@ -723,35 +743,56 @@ local function AutoFishCycle()
         local y = perfectCast and 0.969 or (math.random(0,1000)/1000)
         miniGameRemote:InvokeServer(x, y)
 
-        -- Event-based detection
+        -- Event-based detection dengan metode yang lebih reliable
         local caught = false
-        -- Misal rod punya nilai "HasFish" atau bisa juga detect via folder di player
-        local rodTool = player.Backpack:FindFirstChild("FishingRod") or player.Character:FindFirstChild("FishingRod")
-        if rodTool then
-            local connection
-            connection = rodTool:GetAttributeChangedSignal("HasFish"):Connect(function()
+        local timer = 0
+        local maxWaitTime = 20 -- Maksimal 20 detik menunggu ikan
+        
+        while not caught and timer < maxWaitTime do
+            -- Cek di backpack dan character
+            local rodTool = player.Backpack:FindFirstChild("FishingRod") or player.Character:FindFirstChild("FishingRod")
+            
+            if rodTool then
+                -- Method 1: Cek attribute HasFish
                 if rodTool:GetAttribute("HasFish") == true then
                     caught = true
-                    connection:Disconnect()
+                    break
                 end
-            end)
-            -- Safety fallback
-            local timer = 0
-            while not caught and timer < 15 do
-                task.wait(0.1)
-                timer += 0.1
+                
+                -- Method 2: Cek jika rod sedang digunakan
+                if rodTool:FindFirstChild("Handle") and rodTool.Handle:FindFirstChild("Bob") then
+                    local bob = rodTool.Handle.Bob
+                    if bob.Position.Y < -5 then -- Jika bob di bawah air
+                        caught = true
+                        break
+                    end
+                end
             end
-        else
-            task.wait(5) -- fallback jika rod tidak ketemu
+            
+            task.wait(0.5)
+            timer += 0.5
         end
 
-        -- Fire finishRemote dua kali
+        -- Jika ikan tertangkap atau timeout, selesaikan fishing
         finishRemote:FireServer()
-        task.wait(0.1)
+        task.wait(0.2)
         finishRemote:FireServer()
 
+        -- Update counters
         fishCount += 1
         CounterLabel:Set("🐟 Fish Caught: " .. fishCount)
+        if TotalFishLabel then
+            TotalFishLabel:Set("🎣 Total Fish: " .. fishCount)
+        end
+        
+        -- Notifikasi setiap 10 ikan
+        if fishCount % 10 == 0 then
+            Rayfield:Notify({
+                Title = "🎣 Fishing Progress",
+                Content = "Total fish caught: " .. fishCount,
+                Duration = 3
+            })
+        end
     end)
 end
 
@@ -770,6 +811,17 @@ MainTab:CreateToggle({
                     task.wait(autoRecastDelay)
                 end
             end)
+            Rayfield:Notify({
+                Title = "✅ Auto Fishing Started",
+                Content = "Auto fishing is now running!",
+                Duration = 3
+            })
+        else
+            Rayfield:Notify({
+                Title = "❌ Auto Fishing Stopped",
+                Content = "Auto fishing has been stopped",
+                Duration = 3
+            })
         end
     end
 })
@@ -850,12 +902,13 @@ MainTab:CreateButton({
     end
 })
 
--- Setup Auto Hook saat script mulai
+-- Setup Auto Hook saat script mulai (dengan delay)
+task.wait(2)
 SetupAutoHook()
 
 -- Notifikasi awal
 Rayfield:Notify({
     Title = "✅ AutoFish GUI Loaded",
-    Content = "Event-based detection ready! Auto Sell, Teleport & Telegram features added!",
-    Duration = 4
+    Content = "All features are ready! Auto Hook, Telegram & Statistics activated!",
+    Duration = 5
 })
