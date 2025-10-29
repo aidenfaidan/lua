@@ -3,13 +3,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
-local VirtualUser = game:GetService("VirtualUser")
 local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
-local Lighting = game:GetService("Lighting")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 
 -- Lokasi Remote
 local net = ReplicatedStorage
@@ -31,60 +25,29 @@ local autoRecastDelay = 2
 local fishCount = 0
 local autoSell = false
 local lastSellTime = 0
-local antiAFK = false
-local autoJump = false
-local autoJumpDelay = 3
-local walkOnWater = false
-local noClip = false
-local xRay = false
-local espEnabled = false
-local espDistance = 20
-local infiniteZoom = false
-local lockedPosition = false
-local lockCFrame = nil
-local autoRejoin = false
-local brightness = 2
-local timeOfDay = 14
 
 -- Konfigurasi Auto Sell
 local AUTO_SELL_THRESHOLD = 60 -- Jual ketika ikan non-favorit > 60
 local AUTO_SELL_DELAY = 60 -- Delay minimum antara penjualan (detik)
 
--- Data Teleport - Diperbarui dengan posisi yang lebih akurat
-local IslandsData = {
-    {Name = "Fisherman Island", Position = Vector3.new(92, 9, 2768)},
-    {Name = "Arrow Lever", Position = Vector3.new(898, 8, -363)},
-    {Name = "Sisyphus Statue", Position = Vector3.new(-3740, -136, -1013)},
-    {Name = "Ancient Jungle", Position = Vector3.new(1481, 11, -302)},
-    {Name = "Weather Machine", Position = Vector3.new(-1519, 2, 1908)},
-    {Name = "Coral Reefs", Position = Vector3.new(-3105, 6, 2218)},
-    {Name = "Tropical Island", Position = Vector3.new(-2110, 53, 3649)},
-    {Name = "Kohana", Position = Vector3.new(-662, 3, 714)},
-    {Name = "Esoteric Island", Position = Vector3.new(2035, 27, 1386)},
-    {Name = "Diamond Lever", Position = Vector3.new(1818, 8, -285)},
-    {Name = "Underground Cellar", Position = Vector3.new(2098, -92, -703)},
-    {Name = "Volcano", Position = Vector3.new(-631, 54, 194)},
-    {Name = "Enchant Room", Position = Vector3.new(3255, -1302, 1371)},
-    {Name = "Lost Isle", Position = Vector3.new(-3717, 5, -1079)},
-    {Name = "Sacred Temple", Position = Vector3.new(1475, -22, -630)},
-    {Name = "Crater Island", Position = Vector3.new(981, 41, 5080)},
-    {Name = "Double Enchant Room", Position = Vector3.new(1480, 127, -590)},
-    {Name = "Treasure Room", Position = Vector3.new(-3599, -276, -1642)},
-    {Name = "Crescent Lever", Position = Vector3.new(1419, 31, 78)},
-    {Name = "Hourglass Diamond Lever", Position = Vector3.new(1484, 8, -862)},
-    {Name = "Snow Island", Position = Vector3.new(1627, 4, 3288)}
+-- Data Teleport dari script kedua
+local Locations = {
+    ["Coral Reefs"] = Vector3.new(-2945, 66, 2248),
+    ["Kohana"] = Vector3.new(-645, 16, 606),
+    ["Weather Machine"] = Vector3.new(-1535, 2, 1917),
+    ["Lost Isle [Sisypuhus]"] = Vector3.new(-3703, -136, -1019),
+    ["Winter Fest"] = Vector3.new(1616, 4, 3280),
+    ["Esoteric Depths"] = Vector3.new(3214, -1303, 1411),
+    ["Tropical Grove"] = Vector3.new(-2047, 6, 3662),
+    ["Stingray Shores"] = Vector3.new(2, 4, 2839),
+    ["Lost Isle [Treasure Room]"] = Vector3.new(-3594, -285, -1635),
+    ["Lost Isle [Lost Shore]"] = Vector3.new(-3672, 70, -912),
+    ["Kohana Volcano"] = Vector3.new(-512, 24, 191),
+    ["Crater Island"] = Vector3.new(1019, 20, 5071)
 }
 
--- Data Events dengan posisi alternatif
-local eventsList = {
-    "Shark Hunt", 
-    "Ghost Shark Hunt", 
-    "Worm Hunt", 
-    "Black Hole", 
-    "Shocked", 
-    "Ghost Worm", 
-    "Meteor Rain"
-}
+-- Data Events
+local eventsList = {"Shark Hunt", "Ghost Shark Hunt", "Worm Hunt", "Black Hole", "Shocked", "Ghost Worm", "Meteor Rain"}
 
 -- GUI Setup
 local Window = Rayfield:CreateWindow({
@@ -96,308 +59,136 @@ local Window = Rayfield:CreateWindow({
 })
 
 local MainTab = Window:CreateTab("⚙️ Main Controls")
-local UtilityTab = Window:CreateTab("🔧 Utility")
 local TeleportTab = Window:CreateTab("🌍 Teleport")
-local VisualTab = Window:CreateTab("🎨 Visual")
-local ServerTab = Window:CreateTab("🌐 Server")
-
+local UtilityTab = Window:CreateTab("🔧 Utility")
 local CounterLabel = MainTab:CreateLabel("🐟 Fish Caught: 0")
 
--- ================= FUNGSI TELEPORT YANG DIPERBAIKI =================
+-- ================= FUNGSI TELEPORT =================
 
--- Fungsi Teleport ke Position yang lebih reliable
+-- Fungsi Teleport ke Position
 local function TeleportToPosition(position)
-    local success, err = pcall(function()
+    pcall(function()
         local character = player.Character
-        if not character then
-            character = player.CharacterAdded:Wait()
-        end
-        
-        local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-        
-        -- Gunakan TweenService untuk teleport yang lebih smooth
-        local tweenInfo = TweenInfo.new(1, Enum.EasingStyle.Linear)
-        local tween = TweenService:Create(humanoidRootPart, tweenInfo, {CFrame = CFrame.new(position + Vector3.new(0, 5, 0))})
-        tween:Play()
-        
-        tween.Completed:Wait()
-        return true
-    end)
-    
-    if not success then
-        warn("[Teleport Error]: " .. tostring(err))
-        -- Fallback ke metode biasa
-        pcall(function()
-            local character = player.Character
-            if character and character:FindFirstChild("HumanoidRootPart") then
-                character.HumanoidRootPart.CFrame = CFrame.new(position + Vector3.new(0, 5, 0))
+        if character then
+            local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+            if humanoidRootPart then
+                humanoidRootPart.CFrame = CFrame.new(position)
+                Rayfield:Notify({
+                    Title = "✅ Teleported",
+                    Content = "Successfully teleported to destination",
+                    Duration = 3
+                })
+                return true
             end
-        end)
-    end
-    
-    return success
+        end
+        return false
+    end)
 end
 
--- Fungsi Teleport ke Island yang diperbaiki
-local function TeleportToIsland(islandName)
-    local success = false
-    local islandFound = false
-    
-    for _, island in ipairs(IslandsData) do
-        if island.Name == islandName then
-            islandFound = true
-            Rayfield:Notify({
-                Title = "🚀 Teleporting...",
-                Content = "Teleporting to " .. islandName,
-                Duration = 2
-            })
-            
-            -- Tunggu sedikit sebelum teleport
-            task.wait(1)
-            
-            success = TeleportToPosition(island.Position)
-            
-            if success then
-                Rayfield:Notify({
-                    Title = "✅ Teleport Success",
-                    Content = "Successfully teleported to " .. islandName,
-                    Duration = 3
-                })
-            else
-                Rayfield:Notify({
-                    Title = "❌ Teleport Failed",
-                    Content = "Failed to teleport to " .. islandName,
-                    Duration = 3
-                })
-            end
-            break
-        end
-    end
-    
-    if not islandFound then
+-- Fungsi Teleport ke Location
+local function TeleportToLocation(locationName)
+    if Locations[locationName] then
+        TeleportToPosition(Locations[locationName])
+    else
         Rayfield:Notify({
-            Title = "❌ Island Not Found",
-            Content = "Island '" .. islandName .. "' not found in database",
+            Title = "❌ Location Not Found",
+            Content = "Location '" .. locationName .. "' not found!",
             Duration = 3
         })
     end
-    
-    return success
 end
 
--- Fungsi Scan Events yang lebih akurat
-local function ScanActiveEvents()
-    local events = {}
-    local validEvents = {
-        "Shark", "Ghost", "Worm", "Black Hole", "Shocked", "Meteor"
-    }
-
-    -- Cari di workspace untuk event objects
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") then
-            local name = obj.Name
-            for _, eventKeyword in ipairs(validEvents) do
-                if string.find(name, eventKeyword) then
-                    local exists = false
-                    for _, e in ipairs(events) do
-                        if e.Name == name then
-                            exists = true
-                            break
-                        end
-                    end
-                    
-                    if not exists then
-                        local pos = Vector3.new(0, 0, 0)
-                        if obj.PrimaryPart then
-                            pos = obj.PrimaryPart.Position
-                        elseif obj:FindFirstChild("HumanoidRootPart") then
-                            pos = obj.HumanoidRootPart.Position
-                        else
-                            -- Coba dapatkan posisi dari part pertama
-                            for _, part in pairs(obj:GetChildren()) do
-                                if part:IsA("BasePart") then
-                                    pos = part.Position
-                                    break
-                                end
-                            end
-                        end
-                        
-                        table.insert(events, {
-                            Name = name,
-                            Object = obj,
-                            Position = pos
-                        })
-                    end
-                    break
-                end
-            end
-        end
-    end
-
-    print("[EVENT SCANNER] Found " .. tostring(#events) .. " events.")
-    return events
-end
-
--- Fungsi Teleport ke Event yang diperbaiki
+-- Fungsi Teleport ke Event
 local function TeleportToEvent(eventName)
-    Rayfield:Notify({
-        Title = "🔍 Scanning Events...",
-        Content = "Looking for " .. eventName,
-        Duration = 2
-    })
-    
-    local events = ScanActiveEvents()
-    local eventFound = false
-    local success = false
-    
-    for _, event in ipairs(events) do
-        if string.find(event.Name, eventName) or string.find(eventName, event.Name) then
-            eventFound = true
-            Rayfield:Notify({
-                Title = "🎯 Event Found",
-                Content = "Teleporting to " .. event.Name,
-                Duration = 2
-            })
-            
-            task.wait(1)
-            success = TeleportToPosition(event.Position)
-            
-            if success then
-                Rayfield:Notify({
-                    Title = "✅ Event Teleport Success",
-                    Content = "Teleported to " .. event.Name,
-                    Duration = 3
-                })
-            else
-                Rayfield:Notify({
-                    Title = "❌ Event Teleport Failed",
-                    Content = "Failed to teleport to " .. event.Name,
-                    Duration = 3
-                })
-            end
-            break
-        end
-    end
-    
-    if not eventFound then
-        -- Fallback: Coba cari di Props folder
+    pcall(function()
         local props = workspace:FindFirstChild("Props")
-        if props then
-            for _, prop in pairs(props:GetChildren()) do
-                if string.find(prop.Name, eventName) then
-                    eventFound = true
-                    local pos = Vector3.new(0, 0, 0)
-                    if prop:FindFirstChild("Fishing Boat") then
-                        pos = prop["Fishing Boat"].Position
-                    elseif prop.PrimaryPart then
-                        pos = prop.PrimaryPart.Position
+        if props and props:FindFirstChild(eventName) then
+            local eventObj = props[eventName]
+            local pos = Vector3.new(0, 0, 0)
+            
+            if eventObj:FindFirstChild("Fishing Boat") then
+                pos = eventObj["Fishing Boat"].Position
+            elseif eventObj.PrimaryPart then
+                pos = eventObj.PrimaryPart.Position
+            else
+                -- Cari part pertama untuk posisi
+                for _, part in pairs(eventObj:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        pos = part.Position
+                        break
                     end
-                    
-                    success = TeleportToPosition(pos)
-                    
-                    if success then
-                        Rayfield:Notify({
-                            Title = "✅ Event Teleport Success",
-                            Content = "Teleported to " .. prop.Name,
-                            Duration = 3
-                        })
-                    end
-                    break
                 end
             end
-        end
-        
-        if not eventFound then
+            
+            TeleportToPosition(pos + Vector3.new(0, 10, 0))
             Rayfield:Notify({
-                Title = "❌ Event Not Active",
-                Content = eventName .. " event is not currently active",
+                Title = "✅ Event Teleport",
+                Content = "Teleported to " .. eventName,
+                Duration = 3
+            })
+        else
+            Rayfield:Notify({
+                Title = "❌ Event Not Found",
+                Content = eventName .. " event is not active!",
                 Duration = 3
             })
         end
-    end
-    
-    return success
-end
-
--- Fungsi Teleport ke Player yang diperbaiki
-local function TeleportToPlayer(playerName)
-    local success, err = pcall(function()
-        local targetPlayer = Players:FindFirstChild(playerName)
-        if not targetPlayer then
-            error("Player not found: " .. playerName)
-        end
-        
-        local targetCharacter = targetPlayer.Character
-        if not targetCharacter then
-            error("Player character not found")
-        end
-        
-        local targetHRP = targetCharacter:WaitForChild("HumanoidRootPart")
-        local character = player.Character
-        if not character then
-            character = player.CharacterAdded:Wait()
-        end
-        
-        local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-        
-        -- Gunakan TweenService untuk teleport yang lebih smooth
-        local tweenInfo = TweenInfo.new(1, Enum.EasingStyle.Linear)
-        local tween = TweenService:Create(humanoidRootPart, tweenInfo, {CFrame = targetHRP.CFrame + Vector3.new(0, 3, 0)})
-        tween:Play()
-        
-        tween.Completed:Wait()
-        return true
     end)
-    
-    if success then
-        Rayfield:Notify({
-            Title = "✅ Player Teleport",
-            Content = "Teleported to " .. playerName,
-            Duration = 3
-        })
-    else
-        Rayfield:Notify({
-            Title = "❌ Teleport Failed",
-            Content = "Failed to teleport: " .. tostring(err),
-            Duration = 3
-        })
-    end
-    
-    return success
 end
 
--- ================= TAB TELEPORT YANG DIPERBAIKI =================
-
-local IslandSection = TeleportTab:CreateSection("🏝️ Island Teleport")
-
--- Get island names for dropdown
-local islandNames = {}
-for _, island in ipairs(IslandsData) do
-    table.insert(islandNames, island.Name)
+-- Fungsi Teleport ke Player
+local function TeleportToPlayer(playerName)
+    pcall(function()
+        local targetPlayer = Players:FindFirstChild(playerName)
+        if targetPlayer and targetPlayer.Character then
+            local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local character = player.Character
+            if targetHRP and character then
+                local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+                if humanoidRootPart then
+                    humanoidRootPart.CFrame = targetHRP.CFrame + Vector3.new(0, 3, 0)
+                    Rayfield:Notify({
+                        Title = "✅ Player Teleport",
+                        Content = "Teleported to " .. playerName,
+                        Duration = 3
+                    })
+                end
+            end
+        else
+            Rayfield:Notify({
+                Title = "❌ Player Not Found",
+                Content = "Player " .. playerName .. " not found!",
+                Duration = 3
+            })
+        end
+    end)
 end
 
-local IslandDropdown = TeleportTab:CreateDropdown({
-    Name = "Select Island",
-    Options = islandNames,
-    CurrentOption = islandNames[1],
-    Callback = function(Option) end
-})
+-- Fungsi Rejoin Server
+local function RejoinServer()
+    pcall(function()
+        TeleportService:Teleport(game.PlaceId, player)
+        Rayfield:Notify({
+            Title = "🔄 Rejoining",
+            Content = "Rejoining current server...",
+            Duration = 3
+        })
+    end)
+end
 
-TeleportTab:CreateButton({
-    Name = "📌 Teleport to Selected Island",
-    Callback = function()
-        local selectedIsland = IslandDropdown.CurrentOption
-        TeleportToIsland(selectedIsland)
-    end
-})
+-- ================= TAB TELEPORT =================
 
--- Button untuk test teleport ke island tertentu
-TeleportTab:CreateButton({
-    Name = "🏝️ Test Fisherman Island",
-    Callback = function()
-        TeleportToIsland("Fisherman Island")
-    end
-})
+local IslandSection = TeleportTab:CreateSection("🏝️ Location Teleport")
+
+-- Buat tombol untuk setiap location
+for name, pos in pairs(Locations) do
+    TeleportTab:CreateButton({
+        Name = "📌 " .. name,
+        Callback = function()
+            TeleportToLocation(name)
+        end
+    })
+end
 
 local EventSection = TeleportTab:CreateSection("⚡ Event Teleport")
 
@@ -416,36 +207,11 @@ TeleportTab:CreateButton({
     end
 })
 
--- Button untuk scan events manual
-TeleportTab:CreateButton({
-    Name = "🔍 Scan Active Events",
-    Callback = function()
-        local events = ScanActiveEvents()
-        if #events > 0 then
-            local eventNames = {}
-            for _, event in ipairs(events) do
-                table.insert(eventNames, event.Name)
-            end
-            Rayfield:Notify({
-                Title = "📊 Active Events Found",
-                Content = "Events: " .. table.concat(eventNames, ", "),
-                Duration = 5
-            })
-        else
-            Rayfield:Notify({
-                Title = "❌ No Events",
-                Content = "No active events found",
-                Duration = 3
-            })
-        end
-    end
-})
-
 local PlayerSection = TeleportTab:CreateSection("👥 Player Teleport")
 
 -- Get player list
 local playerList = {}
-for _, plr in ipairs(Players:GetPlayers()) do
+for _, plr in pairs(Players:GetPlayers()) do
     if plr ~= player then
         table.insert(playerList, plr.Name)
     end
@@ -466,7 +232,7 @@ TeleportTab:CreateButton({
     Name = "🔄 Refresh Player List",
     Callback = function()
         local newPlayerList = {}
-        for _, plr in ipairs(Players:GetPlayers()) do
+        for _, plr in pairs(Players:GetPlayers()) do
             if plr ~= player then
                 table.insert(newPlayerList, plr.Name)
             end
@@ -479,7 +245,7 @@ TeleportTab:CreateButton({
         PlayerDropdown:Refresh(newPlayerList, true)
         Rayfield:Notify({
             Title = "✅ Player List Updated",
-            Content = "Found " .. (#newPlayerList) .. " players",
+            Content = "Refreshed player list",
             Duration = 2
         })
     end
@@ -501,150 +267,262 @@ TeleportTab:CreateButton({
     end
 })
 
-local PositionSection = TeleportTab:CreateSection("📍 Position Management")
+local ServerSection = TeleportTab:CreateSection("🌐 Server Management")
 
-local savedPosition = nil
-local checkpointPosition = nil
-
--- Fungsi save position yang diperbaiki
-local function SaveCurrentPosition()
-    local character = player.Character
-    if character and character:FindFirstChild("HumanoidRootPart") then
-        savedPosition = character.HumanoidRootPart.CFrame
-        Rayfield:Notify({
-            Title = "✅ Position Saved",
-            Content = "Current position saved successfully",
-            Duration = 2
-        })
-        return true
-    else
-        Rayfield:Notify({
-            Title = "❌ Save Failed",
-            Content = "Could not save position - character not found",
-            Duration = 3
-        })
-        return false
+TeleportTab:CreateButton({
+    Name = "🔄 Rejoin Server",
+    Callback = function()
+        RejoinServer()
     end
-end
+})
 
--- Fungsi teleport to saved position yang diperbaiki
-local function TeleportToSavedPosition()
-    if savedPosition then
-        local success = TeleportToPosition(savedPosition.Position)
-        if success then
+TeleportTab:CreateButton({
+    Name = "📋 Copy Job ID",
+    Callback = function()
+        pcall(function()
+            setclipboard(game.JobId)
             Rayfield:Notify({
-                Title = "✅ Position Loaded",
-                Content = "Teleported to saved position",
+                Title = "✅ Copied",
+                Content = "Job ID copied to clipboard!",
                 Duration = 2
             })
-        else
-            Rayfield:Notify({
-                Title = "❌ Teleport Failed",
-                Content = "Failed to teleport to saved position",
-                Duration = 3
-            })
-        end
-    else
-        Rayfield:Notify({
-            Title = "❌ No Saved Position",
-            Content = "Save a position first!",
-            Duration = 3
-        })
-    end
-end
-
-TeleportTab:CreateButton({
-    Name = "💾 Save Current Position",
-    Callback = SaveCurrentPosition
-})
-
-TeleportTab:CreateButton({
-    Name = "🚀 Teleport to Saved Position",
-    Callback = TeleportToSavedPosition
-})
-
-TeleportTab:CreateButton({
-    Name = "📌 Set Checkpoint",
-    Callback = function()
-        local character = player.Character
-        if character and character:FindFirstChild("HumanoidRootPart") then
-            checkpointPosition = character.HumanoidRootPart.CFrame
-            Rayfield:Notify({
-                Title = "✅ Checkpoint Set",
-                Content = "Checkpoint position saved",
-                Duration = 2
-            })
-        end
+        end)
     end
 })
 
-TeleportTab:CreateButton({
-    Name = "↩️ Teleport to Checkpoint",
+-- ================= TAB UTILITY =================
+
+local UtilitySection = UtilityTab:CreateSection("🛠️ Utility Features")
+
+UtilityTab:CreateButton({
+    Name = "🔄 Rejoin Server",
     Callback = function()
-        if checkpointPosition then
-            local success = TeleportToPosition(checkpointPosition.Position)
-            if success then
+        RejoinServer()
+    end
+})
+
+UtilityTab:CreateButton({
+    Name = "🛒 Sell All Fish Now",
+    Callback = function()
+        pcall(function()
+            local sellFunc = net:FindFirstChild("RF/SellAllItems")
+            if sellFunc then
+                sellFunc:InvokeServer()
                 Rayfield:Notify({
-                    Title = "✅ Checkpoint Loaded",
-                    Content = "Teleported to checkpoint",
-                    Duration = 2
+                    Title = "✅ Manual Sell",
+                    Content = "Sold all non-favorited items!",
+                    Duration = 3
                 })
-            end
-        else
-            Rayfield:Notify({
-                Title = "❌ No Checkpoint",
-                Content = "Set a checkpoint first!",
-                Duration = 3
-            })
-        end
-    end
-})
-
-TeleportTab:CreateToggle({
-    Name = "🔒 Lock Position",
-    CurrentValue = lockedPosition,
-    Callback = function(val)
-        lockedPosition = val
-        if val then
-            local character = player.Character
-            if character and character:FindFirstChild("HumanoidRootPart") then
-                lockCFrame = character.HumanoidRootPart.CFrame
-                -- Start lock position loop
-                task.spawn(function()
-                    while lockedPosition do
-                        if character and character:FindFirstChild("HumanoidRootPart") then
-                            character.HumanoidRootPart.CFrame = lockCFrame
-                        end
-                        task.wait()
-                    end
-                end)
+                lastSellTime = os.time()
+            else
                 Rayfield:Notify({
-                    Title = "✅ Position Locked",
-                    Content = "Position locked in place",
+                    Title = "❌ Sell Failed",
+                    Content = "Sell function not found",
                     Duration = 3
                 })
             end
+        end)
+    end
+})
+
+-- ================= FUNGSI AUTO SELL =================
+
+-- Fungsi Auto Sell
+local function startAutoSell()
+    task.spawn(function()
+        while autoSell do
+            pcall(function()
+                -- Cek apakah Replion tersedia
+                if not Replion then 
+                    task.wait(10)
+                    return 
+                end
+                
+                local DataReplion = Replion.Client:WaitReplion("Data")
+                local items = DataReplion and DataReplion:Get({"Inventory","Items"})
+                if type(items) ~= "table" then return end
+
+                -- Hitung ikan yang tidak difavoritkan
+                local unfavoritedCount = 0
+                for _, item in ipairs(items) do
+                    if not item.Favorited then
+                        unfavoritedCount = unfavoritedCount + (item.Count or 1)
+                    end
+                end
+
+                -- Jual hanya jika melebihi threshold dan delay terpenuhi
+                if unfavoritedCount >= AUTO_SELL_THRESHOLD and os.time() - lastSellTime >= AUTO_SELL_DELAY then
+                    local sellFunc = net:FindFirstChild("RF/SellAllItems")
+                    if sellFunc then
+                        task.spawn(sellFunc.InvokeServer, sellFunc)
+                        Rayfield:Notify({
+                            Title = "💰 Auto Sell",
+                            Content = "Selling non-favorited items...",
+                            Duration = 3
+                        })
+                        lastSellTime = os.time()
+                    end
+                end
+            end)
+            task.wait(10) -- Cek setiap 10 detik
+        end
+    end)
+end
+
+-- Fungsi mendapatkan net folder
+local function getNetFolder() 
+    return net 
+end
+
+-- ================= FUNGSI AUTO FISH =================
+
+-- Fungsi utama auto fish
+local function AutoFishCycle()
+    pcall(function()
+        -- Equip rod
+        equipRemote:FireServer(1)
+        task.wait(0.1)
+
+        -- Charge rod
+        local timestamp = perfectCast and 9999999999 or (tick() + math.random())
+        rodRemote:InvokeServer(timestamp)
+        task.wait(0.5)
+
+        -- Perfect / random cast
+        local x = perfectCast and -1.238 or (math.random(-1000,1000)/1000)
+        local y = perfectCast and 0.969 or (math.random(0,1000)/1000)
+        miniGameRemote:InvokeServer(x, y)
+
+        -- Event-based detection
+        local caught = false
+        -- Misal rod punya nilai "HasFish" atau bisa juga detect via folder di player
+        local rodTool = player.Backpack:FindFirstChild("FishingRod") or player.Character:FindFirstChild("FishingRod")
+        if rodTool then
+            local connection
+            connection = rodTool:GetAttributeChangedSignal("HasFish"):Connect(function()
+                if rodTool:GetAttribute("HasFish") == true then
+                    caught = true
+                    connection:Disconnect()
+                end
+            end)
+            -- Safety fallback
+            local timer = 0
+            while not caught and timer < 15 do
+                task.wait(0.1)
+                timer += 0.1
+            end
+        else
+            task.wait(5) -- fallback jika rod tidak ketemu
+        end
+
+        -- Fire finishRemote dua kali
+        finishRemote:FireServer()
+        task.wait(0.1)
+        finishRemote:FireServer()
+
+        fishCount += 1
+        CounterLabel:Set("🐟 Fish Caught: " .. fishCount)
+    end)
+end
+
+-- ================= TAB MAIN CONTROLS =================
+
+-- START / STOP AUTO FISH
+MainTab:CreateToggle({
+    Name = "🎣 Enable Auto Fishing",
+    CurrentValue = false,
+    Callback = function(val)
+        autofish = val
+        if val then
+            task.spawn(function()
+                while autofish do
+                    AutoFishCycle()
+                    task.wait(autoRecastDelay)
+                end
+            end)
+        end
+    end
+})
+
+-- PERFECT CAST OPTION
+MainTab:CreateToggle({
+    Name = "✨ Use Perfect Cast",
+    CurrentValue = false,
+    Callback = function(val)
+        perfectCast = val
+    end
+})
+
+-- AUTO SELL TOGGLE
+MainTab:CreateToggle({
+    Name = "💰 Auto Sell Non-Favorited Fish",
+    CurrentValue = false,
+    Callback = function(val)
+        autoSell = val
+        if val then
+            startAutoSell()
+            Rayfield:Notify({
+                Title = "✅ Auto Sell Enabled",
+                Content = "Will automatically sell when non-favorited fish > " .. AUTO_SELL_THRESHOLD,
+                Duration = 4
+            })
         else
             Rayfield:Notify({
-                Title = "❌ Position Unlocked",
-                Content = "Position lock released",
+                Title = "❌ Auto Sell Disabled",
+                Content = "Auto selling feature turned off",
                 Duration = 3
             })
         end
     end
 })
 
--- ... (Fungsi dan tab lainnya tetap sama seperti sebelumnya)
+-- DELAY SLIDER
+MainTab:CreateSlider({
+    Name = "⏱️ Auto Recast Delay (seconds)",
+    Range = {0.5, 5},
+    Increment = 0.1,
+    CurrentValue = autoRecastDelay,
+    Callback = function(val)
+        autoRecastDelay = val
+    end
+})
+
+-- MANUAL SELL BUTTON
+MainTab:CreateButton({
+    Name = "🛒 Sell All Non-Favorited Fish Now",
+    Callback = function()
+        pcall(function()
+            local sellFunc = net:FindFirstChild("RF/SellAllItems")
+            if sellFunc then
+                sellFunc:InvokeServer()
+                Rayfield:Notify({
+                    Title = "✅ Manual Sell",
+                    Content = "Sold all non-favorited items!",
+                    Duration = 3
+                })
+                lastSellTime = os.time()
+            else
+                Rayfield:Notify({
+                    Title = "❌ Sell Failed",
+                    Content = "Sell function not found",
+                    Duration = 3
+                })
+            end
+        end)
+    end
+})
+
+-- CLOSE GUI BUTTON
+MainTab:CreateButton({
+    Name = "❌ Close GUI",
+    Callback = function()
+        Rayfield:Destroy()
+    end
+})
 
 -- Notifikasi awal
 Rayfield:Notify({
     Title = "✅ AutoFish GUI Loaded",
-    Content = "All features loaded! Teleport system IMPROVED with better detection!",
-    Duration = 5
+    Content = "Event-based detection ready! Auto Sell & Teleport features added!",
+    Duration = 4
 })
-
-print("=== TELEPORT SYSTEM READY ===")
-print("Island Teleport: " .. #IslandsData .. " locations available")
-print("Event Teleport: " .. #eventsList .. " event types")
-print("Player Teleport: Ready")
-print("Position Management: Ready")
