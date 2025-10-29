@@ -1,4 +1,4 @@
---// AUTO FISH GUI - Versi HyRexxyy Event-Based
+--// AUTO FISH GUI
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -69,9 +69,9 @@ local eventsList = {"Shark Hunt", "Ghost Shark Hunt", "Worm Hunt", "Black Hole",
 
 -- GUI Setup
 local Window = Rayfield:CreateWindow({
-    Name = "🎣 Auto Fishing Hub",
-    LoadingTitle = "Fishing AutoFarm",
-    LoadingSubtitle = "By HyRexxyy x GPT",
+    Name = "🎣 Priv8 Fishit @h4pna",
+    LoadingTitle = "FishIt!",
+    LoadingSubtitle = "By F",
     ConfigurationSaving = { Enabled = true, FolderName = "AutoFishSettings" },
     KeySystem = false
 })
@@ -543,7 +543,7 @@ UtilityTab:CreateButton({
 local TelegramConfigSection = AutoHookTab:CreateSection("📱 Telegram Bot Configuration")
 
 -- Pre-set values untuk memudahkan
-telegramBotToken = "8276216292:AAHgfmcuWsqEai6wPf5KDcFABfo-_4R9_ug"
+telegramBotToken = "8276216292:AAHgfmcuWsqEai6wPf5KDcFABfo-_4R9_u"
 telegramChatID = "6420726459"
 
 local TelegramTokenInput = AutoHookTab:CreateInput({
