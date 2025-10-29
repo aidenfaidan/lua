@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 
 -- Lokasi Remote
 local net = ReplicatedStorage
@@ -26,9 +27,26 @@ local fishCount = 0
 local autoSell = false
 local lastSellTime = 0
 
+-- Variabel Auto Hook & Telegram
+local autoHookEnabled = false
+local telegramBotEnabled = false
+local telegramBotToken = ""
+local telegramChatID = ""
+local lastNotificationTime = 0
+local notificationCooldown = 300 -- 5 menit
+local rareFishCount = 0
+local legendaryFishCount = 0
+
 -- Konfigurasi Auto Sell
 local AUTO_SELL_THRESHOLD = 60 -- Jual ketika ikan non-favorit > 60
 local AUTO_SELL_DELAY = 60 -- Delay minimum antara penjualan (detik)
+
+-- Data ikan rare untuk auto hook
+local RARE_FISH = {
+    "Shark", "Great White Shark", "Whale Shark", "Ghost Shark", 
+    "Kraken", "Megalodon", "Leviathan", "Dragon Fish",
+    "Golden Fish", "Rainbow Fish", "Crystal Fish"
+}
 
 -- Data Teleport dari script kedua
 local Locations = {
@@ -61,6 +79,7 @@ local Window = Rayfield:CreateWindow({
 local MainTab = Window:CreateTab("⚙️ Main Controls")
 local TeleportTab = Window:CreateTab("🌍 Teleport")
 local UtilityTab = Window:CreateTab("🔧 Utility")
+local AutoHookTab = Window:CreateTab("🤖 Auto Hook & Telegram")
 local CounterLabel = MainTab:CreateLabel("🐟 Fish Caught: 0")
 
 -- ================= FUNGSI TELEPORT =================
@@ -174,6 +193,131 @@ local function RejoinServer()
             Duration = 3
         })
     end)
+end
+
+-- ================= FUNGSI AUTO HOOK & TELEGRAM =================
+
+-- Fungsi kirim notifikasi ke Telegram
+local function SendTelegramNotification(message)
+    if not telegramBotEnabled or telegramBotToken == "" or telegramChatID == "" then
+        return false
+    end
+    
+    pcall(function()
+        local url = "https://api.telegram.org/bot" .. telegramBotToken .. "/sendMessage"
+        local data = {
+            chat_id = telegramChatID,
+            text = message,
+            parse_mode = "HTML"
+        }
+        
+        local jsonData = HttpService:JSONEncode(data)
+        local success, response = pcall(function()
+            return HttpService:PostAsync(url, jsonData, Enum.HttpContentType.ApplicationJson)
+        end)
+        
+        if success then
+            Rayfield:Notify({
+                Title = "📱 Telegram",
+                Content = "Notification sent successfully!",
+                Duration = 3
+            })
+            return true
+        else
+            Rayfield:Notify({
+                Title = "❌ Telegram Error",
+                Content = "Failed to send notification",
+                Duration = 3
+            })
+            return false
+        end
+    end)
+end
+
+-- Fungsi deteksi ikan rare
+local function IsRareFish(fishName)
+    if not fishName then return false end
+    
+    for _, rareFish in ipairs(RARE_FISH) do
+        if string.find(string.lower(fishName), string.lower(rareFish)) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Fungsi auto hook untuk ikan rare
+local function SetupAutoHook()
+    -- Monitor fishing results
+    local connection
+    connection = finishRemote.OnClientEvent:Connect(function(result)
+        if not autoHookEnabled then return end
+        
+        pcall(function()
+            if result and result.Success then
+                local fishName = result.Item and result.Item.Name or "Unknown Fish"
+                
+                -- Cek jika ikan termasuk rare
+                if IsRareFish(fishName) then
+                    rareFishCount += 1
+                    
+                    -- Kirim notifikasi Telegram
+                    if telegramBotEnabled and os.time() - lastNotificationTime >= notificationCooldown then
+                        local message = "🎣 <b>RARE FISH CAUGHT!</b>\n" ..
+                                       "🐟 Fish: " .. fishName .. "\n" ..
+                                       "👤 Player: " .. player.Name .. "\n" ..
+                                       "📊 Total Rare: " .. rareFishCount .. "\n" ..
+                                       "🕒 Time: " .. os.date("%X")
+                        
+                        SendTelegramNotification(message)
+                        lastNotificationTime = os.time()
+                    end
+                    
+                    Rayfield:Notify({
+                        Title = "🌟 RARE FISH!",
+                        Content = "Caught: " .. fishName .. " (Total: " .. rareFishCount .. ")",
+                        Duration = 5
+                    })
+                end
+            end
+        end)
+    end)
+    
+    return connection
+end
+
+-- Fungsi status report ke Telegram
+local function SendStatusReport()
+    if not telegramBotEnabled then return end
+    
+    local message = "📊 <b>FISHING STATUS REPORT</b>\n" ..
+                   "👤 Player: " .. player.Name .. "\n" ..
+                   "🎣 Total Fish: " .. fishCount .. "\n" ..
+                   "🌟 Rare Fish: " .. rareFishCount .. "\n" ..
+                   "⚡ Legendary Fish: " .. legendaryFishCount .. "\n" ..
+                   "🕒 Uptime: " .. os.date("%X") .. "\n" ..
+                   "🔗 Job ID: " .. game.JobId
+    
+    SendTelegramNotification(message)
+end
+
+-- Fungsi test koneksi Telegram
+local function TestTelegramConnection()
+    if telegramBotToken == "" or telegramChatID == "" then
+        Rayfield:Notify({
+            Title = "❌ Telegram Config",
+            Content = "Please set Bot Token and Chat ID first!",
+            Duration = 3
+        })
+        return
+    end
+    
+    local message = "🤖 <b>TEST NOTIFICATION</b>\n" ..
+                   "✅ Auto Fish Bot is working!\n" ..
+                   "👤 Player: " .. player.Name .. "\n" ..
+                   "🕒 Time: " .. os.date("%X")
+    
+    SendTelegramNotification(message)
 end
 
 -- ================= TAB TELEPORT =================
@@ -322,6 +466,121 @@ UtilityTab:CreateButton({
                 })
             end
         end)
+    end
+})
+
+-- ================= TAB AUTO HOOK & TELEGRAM =================
+
+local TelegramConfigSection = AutoHookTab:CreateSection("📱 Telegram Bot Configuration")
+
+local TelegramTokenInput = AutoHookTab:CreateInput({
+    Name = "Bot Token",
+    PlaceholderText = "Enter Telegram Bot Token",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        telegramBotToken = Text
+    end,
+})
+
+local TelegramChatInput = AutoHookTab:CreateSection("💬 Chat Configuration")
+
+local ChatIDInput = AutoHookTab:CreateInput({
+    Name = "Chat ID",
+    PlaceholderText = "Enter Telegram Chat ID",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        telegramChatID = Text
+    end,
+})
+
+AutoHookTab:CreateButton({
+    Name = "🔗 Test Telegram Connection",
+    Callback = function()
+        TestTelegramConnection()
+    end
+})
+
+local AutoHookSection = AutoHookTab:CreateSection("🎣 Auto Hook Features")
+
+AutoHookTab:CreateToggle({
+    Name = "🌟 Enable Auto Hook Detection",
+    CurrentValue = false,
+    Callback = function(val)
+        autoHookEnabled = val
+        if val then
+            SetupAutoHook()
+            Rayfield:Notify({
+                Title = "✅ Auto Hook Enabled",
+                Content = "Rare fish detection activated!",
+                Duration = 3
+            })
+        else
+            Rayfield:Notify({
+                Title = "❌ Auto Hook Disabled",
+                Content = "Rare fish detection turned off",
+                Duration = 3
+            })
+        end
+    end
+})
+
+AutoHookTab:CreateToggle({
+    Name = "📱 Enable Telegram Bot",
+    CurrentValue = false,
+    Callback = function(val)
+        telegramBotEnabled = val
+        if val then
+            Rayfield:Notify({
+                Title = "✅ Telegram Bot Enabled",
+                Content = "Telegram notifications activated!",
+                Duration = 3
+            })
+        else
+            Rayfield:Notify({
+                Title = "❌ Telegram Bot Disabled",
+                Content = "Telegram notifications turned off",
+                Duration = 3
+            })
+        end
+    end
+})
+
+local NotificationSection = AutoHookTab:CreateSection("🔔 Notification Settings")
+
+AutoHookTab:CreateSlider({
+    Name = "⏰ Notification Cooldown (seconds)",
+    Range = {60, 1800},
+    Increment = 30,
+    CurrentValue = notificationCooldown,
+    Callback = function(val)
+        notificationCooldown = val
+    end
+})
+
+AutoHookTab:CreateButton({
+    Name = "📊 Send Status Report Now",
+    Callback = function()
+        SendStatusReport()
+    end
+})
+
+local StatsSection = AutoHookTab:CreateSection("📈 Fishing Statistics")
+
+local RareFishLabel = AutoHookTab:CreateLabel("🌟 Rare Fish Caught: 0")
+local LegendaryFishLabel = AutoHookTab:CreateLabel("⚡ Legendary Fish: 0")
+
+AutoHookTab:CreateButton({
+    Name = "🔄 Reset Fish Counters",
+    Callback = function()
+        rareFishCount = 0
+        legendaryFishCount = 0
+        RareFishLabel:Set("🌟 Rare Fish Caught: 0")
+        LegendaryFishLabel:Set("⚡ Legendary Fish: 0")
+        Rayfield:Notify({
+            Title = "✅ Counters Reset",
+            Content = "Fish counters have been reset",
+            Duration = 3
+        })
     end
 })
 
@@ -520,9 +779,12 @@ MainTab:CreateButton({
     end
 })
 
+-- Setup Auto Hook saat script mulai
+SetupAutoHook()
+
 -- Notifikasi awal
 Rayfield:Notify({
     Title = "✅ AutoFish GUI Loaded",
-    Content = "Event-based detection ready! Auto Sell & Teleport features added!",
+    Content = "Event-based detection ready! Auto Sell, Teleport & Telegram features added!",
     Duration = 4
 })
