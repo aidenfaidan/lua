@@ -30,8 +30,8 @@ local lastSellTime = 0
 -- Variabel Auto Hook & Telegram
 local autoHookEnabled = false
 local telegramBotEnabled = false
-local telegramBotToken = ""
-local telegramChatID = ""
+local telegramBotToken = "8276216292:AAHgfmcuWsqEai6wPf5KDcFABfo-_4R9_ug"
+local telegramChatID = "6420726459"
 local lastNotificationTime = 0
 local notificationCooldown = 300 -- 5 menit
 local rareFishCount = 0
@@ -195,43 +195,97 @@ local function RejoinServer()
     end)
 end
 
--- ================= FUNGSI AUTO HOOK & TELEGRAM =================
+-- ================= FUNGSI AUTO HOOK & TELEGRAM (FIXED) =================
 
--- Fungsi kirim notifikasi ke Telegram
+-- Fungsi encode URL (FIXED)
+local function urlEncode(str)
+    if str then
+        str = string.gsub(str, "([^%w _ %- . ~])", function(c)
+            return string.format("%%%02X", string.byte(c))
+        end)
+        str = string.gsub(str, " ", "%%20")
+    end
+    return str
+end
+
+-- Fungsi kirim notifikasi ke Telegram (FIXED VERSION)
 local function SendTelegramNotification(message)
     if not telegramBotEnabled or telegramBotToken == "" or telegramChatID == "" then
+        Rayfield:Notify({
+            Title = "❌ Telegram Config",
+            Content = "Bot Token or Chat ID is missing!",
+            Duration = 3
+        })
         return false
     end
     
-    pcall(function()
-        local url = "https://api.telegram.org/bot" .. telegramBotToken .. "/sendMessage"
-        local data = {
-            chat_id = telegramChatID,
-            text = message,
-            parse_mode = "HTML"
-        }
+    local success, result = pcall(function()
+        -- Method 1: Menggunakan game:HttpGet (lebih reliable di Roblox)
+        local encodedMessage = urlEncode(message)
+        local url = "https://api.telegram.org/bot" .. telegramBotToken .. "/sendMessage?chat_id=" .. telegramChatID .. "&text=" .. encodedMessage .. "&parse_mode=HTML"
         
-        local jsonData = HttpService:JSONEncode(data)
-        local success, response = pcall(function()
-            return HttpService:PostAsync(url, jsonData, Enum.HttpContentType.ApplicationJson)
-        end)
-        
-        if success then
+        local response = game:HttpGet(url, true)
+        return response
+    end)
+    
+    if success then
+        -- Cek jika response mengandung "ok":true
+        if string.find(result, '"ok":true') then
             Rayfield:Notify({
-                Title = "📱 Telegram",
-                Content = "Notification sent successfully!",
+                Title = "✅ Telegram Sent",
+                Content = "Notification delivered successfully!",
                 Duration = 3
             })
             return true
         else
             Rayfield:Notify({
                 Title = "❌ Telegram Error",
-                Content = "Failed to send notification",
+                Content = "API returned error",
                 Duration = 3
             })
             return false
         end
-    end)
+    else
+        -- Method 2: Fallback menggunakan syn.request
+        local success2, result2 = pcall(function()
+            local data = {
+                chat_id = telegramChatID,
+                text = message,
+                parse_mode = "HTML"
+            }
+            
+            local jsonData = HttpService:JSONEncode(data)
+            
+            if syn and syn.request then
+                local response = syn.request({
+                    Url = "https://api.telegram.org/bot" .. telegramBotToken .. "/sendMessage",
+                    Method = "POST",
+                    Headers = {
+                        ["Content-Type"] = "application/json"
+                    },
+                    Body = jsonData
+                })
+                return response
+            end
+            return nil
+        end)
+        
+        if success2 and result2 and result2.Success then
+            Rayfield:Notify({
+                Title = "✅ Telegram Sent",
+                Content = "Notification delivered (method 2)!",
+                Duration = 3
+            })
+            return true
+        else
+            Rayfield:Notify({
+                Title = "❌ Telegram Failed",
+                Content = "Please check internet connection",
+                Duration = 3
+            })
+            return false
+        end
+    end
 end
 
 -- Fungsi deteksi ikan rare
@@ -261,13 +315,19 @@ local function SetupAutoHook()
                 if IsRareFish(fishName) then
                     rareFishCount += 1
                     
+                    -- Update label
+                    if RareFishLabel then
+                        RareFishLabel:Set("🌟 Rare Fish Caught: " .. rareFishCount)
+                    end
+                    
                     -- Kirim notifikasi Telegram
                     if telegramBotEnabled and os.time() - lastNotificationTime >= notificationCooldown then
                         local message = "🎣 <b>RARE FISH CAUGHT!</b>\n" ..
                                        "🐟 Fish: " .. fishName .. "\n" ..
                                        "👤 Player: " .. player.Name .. "\n" ..
                                        "📊 Total Rare: " .. rareFishCount .. "\n" ..
-                                       "🕒 Time: " .. os.date("%X")
+                                       "🕒 Time: " .. os.date("%X") .. "\n" ..
+                                       "🔗 Job ID: " .. game.JobId
                         
                         SendTelegramNotification(message)
                         lastNotificationTime = os.time()
@@ -288,7 +348,14 @@ end
 
 -- Fungsi status report ke Telegram
 local function SendStatusReport()
-    if not telegramBotEnabled then return end
+    if not telegramBotEnabled then 
+        Rayfield:Notify({
+            Title = "❌ Telegram Disabled",
+            Content = "Please enable Telegram Bot first!",
+            Duration = 3
+        })
+        return 
+    end
     
     local message = "📊 <b>FISHING STATUS REPORT</b>\n" ..
                    "👤 Player: " .. player.Name .. "\n" ..
@@ -301,7 +368,7 @@ local function SendStatusReport()
     SendTelegramNotification(message)
 end
 
--- Fungsi test koneksi Telegram
+-- Fungsi test koneksi Telegram (FIXED)
 local function TestTelegramConnection()
     if telegramBotToken == "" or telegramChatID == "" then
         Rayfield:Notify({
@@ -315,7 +382,9 @@ local function TestTelegramConnection()
     local message = "🤖 <b>TEST NOTIFICATION</b>\n" ..
                    "✅ Auto Fish Bot is working!\n" ..
                    "👤 Player: " .. player.Name .. "\n" ..
-                   "🕒 Time: " .. os.date("%X")
+                   "🎣 Status: Connected Successfully\n" ..
+                   "🕒 Time: " .. os.date("%X") .. "\n" ..
+                   "🔗 Job ID: " .. game.JobId
     
     SendTelegramNotification(message)
 end
@@ -473,20 +542,22 @@ UtilityTab:CreateButton({
 
 local TelegramConfigSection = AutoHookTab:CreateSection("📱 Telegram Bot Configuration")
 
+-- Pre-set values untuk memudahkan
+telegramBotToken = "8276216292:AAHgfmcuWsqEai6wPf5KDcFABfo-_4R9_ug"
+telegramChatID = "6420726459"
+
 local TelegramTokenInput = AutoHookTab:CreateInput({
     Name = "Bot Token",
-    PlaceholderText = "Enter Telegram Bot Token",
+    PlaceholderText = telegramBotToken,
     RemoveTextAfterFocusLost = false,
     Callback = function(Text)
         telegramBotToken = Text
     end,
 })
 
-local TelegramChatInput = AutoHookTab:CreateSection("💬 Chat Configuration")
-
-local ChatIDInput = AutoHookTab:CreateInput({
-    Name = "Chat ID",
-    PlaceholderText = "Enter Telegram Chat ID",
+local TelegramChatInput = AutoHookTab:CreateInput({
+    Name = "Chat ID", 
+    PlaceholderText = telegramChatID,
     RemoveTextAfterFocusLost = false,
     Callback = function(Text)
         telegramChatID = Text
