@@ -1,4 +1,4 @@
---// AUTO FISH GUI - Versi HyRexxyy Event-Based + Nikzz Features + FIXED HOOK SYSTEM
+--// AUTO FISH GUI - Versi HyRexxyy Event-Based + Nikzz Features
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -39,12 +39,6 @@ local afkConnection = nil
 local AUTO_SELL_THRESHOLD = 60 -- Jual ketika ikan non-favorit > 60
 local AUTO_SELL_DELAY = 60 -- Delay minimum antara penjualan (detik)
 
--- ================= FISH DETECTION SYSTEM =================
-
--- Sistem deteksi ikan yang tertangkap
-local LastCaughtFish = nil
-local FishDetectionActive = false
-
 -- ================= TELEGRAM SYSTEM FIXED =================
 
 local TELEGRAM_BOT_TOKEN = "8276216292:AAHgfmcuWsqEai6wPf5KDcFABfo-_4R9_ug"
@@ -58,6 +52,11 @@ local TelegramConfig = {
     UseFancyFont = true,
     QuestNotifications = true
 }
+
+-- Variabel untuk fish detection system
+local rareFishCount = 0
+local lastFishData = nil
+local fishDetectionEnabled = true
 
 -- Fungsi HTTP request yang lebih reliable
 local function sendHTTPRequest(url, method, body, headers)
@@ -204,32 +203,182 @@ local function GetPlayerStats()
     return caught, rarest
 end
 
+-- ================= ADVANCED FISH RARITY DETECTION SYSTEM =================
+
+-- Sistem deteksi rarity yang advanced
+local function AdvancedRarityDetection(result)
+    if not result or not result.Success then return "COMMON" end
+    
+    local rarity = "COMMON"
+    
+    pcall(function()
+        -- Method 1: Cek dari Item properties langsung
+        if result.Item then
+            -- Cek jika ada property Rarity langsung
+            if result.Item:FindFirstChild("Rarity") then
+                local rarityValue = result.Item.Rarity.Value
+                if rarityValue then
+                    rarity = string.upper(tostring(rarityValue))
+                    return rarity
+                end
+            end
+            
+            -- Cek dari Name untuk pattern khusus
+            local itemName = string.upper(tostring(result.Item.Name))
+            
+            -- Deteksi berdasarkan kata kunci rarity di nama
+            local rarityKeywords = {
+                MYTHIC = {"MYTHIC", "ANCIENT", "DIVINE", "GODLY"},
+                LEGENDARY = {"LEGENDARY", "DRAGON", "PHOENIX", "LEVIATHAN"},
+                SECRET = {"SECRET", "HIDDEN", "MYSTERIOUS", "FORBIDDEN"},
+                EPIC = {"EPIC", "CRYSTAL", "ROYAL", "MAJESTIC"},
+                RARE = {"RARE", "SHARK", "WHALE", "OCTOPUS"},
+                UNCOMMON = {"UNCOMMON", "SILVER", "MARBLE", "CORAL"}
+            }
+            
+            for rarityType, keywords in pairs(rarityKeywords) do
+                for _, keyword in ipairs(keywords) do
+                    if string.find(itemName, keyword) then
+                        rarity = rarityType
+                        break
+                    end
+                end
+                if rarity ~= "COMMON" then break end
+            end
+        end
+        
+        -- Method 2: Cek dari Sell Price (jika ada)
+        if result.Item then
+            local sellPrice = 0
+            if result.Item:FindFirstChild("SellPrice") then
+                sellPrice = result.Item.SellPrice.Value or 0
+            end
+            
+            -- Estimasi rarity berdasarkan harga jual
+            if sellPrice > 50000 then
+                rarity = "MYTHIC"
+            elseif sellPrice > 20000 then
+                rarity = "LEGENDARY"
+            elseif sellPrice > 10000 then
+                rarity = "SECRET"
+            elseif sellPrice > 5000 then
+                rarity = "EPIC"
+            elseif sellPrice > 2000 then
+                rarity = "RARE"
+            elseif sellPrice > 500 then
+                rarity = "UNCOMMON"
+            else
+                rarity = "COMMON"
+            end
+        end
+        
+        -- Method 3: Cek visual properties (color, effects, dll)
+        if result.Item then
+            -- Cek jika item memiliki partikel effects (biasanya rare)
+            for _, child in pairs(result.Item:GetDescendants()) do
+                if child:IsA("ParticleEmitter") or child:IsA("Beam") or child:IsA("Trail") then
+                    if rarity == "COMMON" then rarity = "RARE"
+                    elseif rarity == "RARE" then rarity = "EPIC"
+                    elseif rarity == "EPIC" then rarity = "LEGENDARY" end
+                end
+            end
+        end
+        
+    end)
+    
+    return rarity
+end
+
+-- Fungsi untuk mendapatkan info ikan yang lebih akurat
+local function GetAdvancedFishInfo(result)
+    if not result or not result.Success then return nil end
+    
+    local fishInfo = {
+        Name = "Unknown Fish",
+        Tier = 1,
+        SellPrice = 0,
+        Rarity = "COMMON",
+        Weight = 0,
+        RealRarity = "COMMON"
+    }
+    
+    pcall(function()
+        -- Dapatkan info dasar dari result
+        if result.Item then
+            fishInfo.Name = result.Item.Name or "Unknown Fish"
+            
+            -- Coba dapatkan SellPrice
+            if result.Item:FindFirstChild("SellPrice") then
+                fishInfo.SellPrice = result.Item.SellPrice.Value or 0
+            end
+            
+            -- Coba dapatkan Weight
+            if result.Item:FindFirstChild("Weight") then
+                fishInfo.Weight = result.Item.Weight.Value or 0
+            elseif result.Item:FindFirstChild("Mass") then
+                fishInfo.Weight = result.Item.Mass.Value or 0
+            end
+            
+            -- Coba dapatkan Tier
+            if result.Item:FindFirstChild("Tier") then
+                fishInfo.Tier = result.Item.Tier.Value or 1
+            end
+        end
+        
+        -- Gunakan advanced rarity detection
+        fishInfo.Rarity = AdvancedRarityDetection(result)
+        fishInfo.RealRarity = fishInfo.Rarity
+        
+        -- Update fish count dari leaderstats
+        local ls = player:FindFirstChild("leaderstats")
+        if ls then
+            local caught = ls:FindFirstChild("Caught") or ls:FindFirstChild("caught")
+            if caught then
+                fishCount = caught.Value
+            end
+        end
+        
+        -- Log untuk debugging
+        print("[Fish Detection] 🎣 Caught: " .. fishInfo.Name .. " | Rarity: " .. fishInfo.Rarity .. " | Price: " .. fishInfo.SellPrice)
+        
+    end)
+    
+    return fishInfo
+end
+
 -- Fungsi BuildTelegramMessage yang diperbaiki (format lebih sederhana)
 local function BuildTelegramMessage(fishInfo, fishId, fishRarity, weight)
     local playerName = player.Name or "Unknown"
     local displayName = player.DisplayName or playerName
     
     local fishName = fishInfo and fishInfo.Name or "Unknown Fish"
-    local fishRarityStr = string.upper(tostring(fishRarity or "UNKNOWN"))
-    local weightDisplay = weight and string.format("%.2fkg", weight) or "?"
+    local fishRarityStr = string.upper(tostring(fishInfo.Rarity or fishRarity or "UNKNOWN"))
+    local weightDisplay = weight and string.format("%.2fkg", weight) or (fishInfo.Weight and string.format("%.2fkg", fishInfo.Weight)) or "?"
     local sellPrice = fishInfo and fishInfo.SellPrice and tostring(fishInfo.SellPrice) or "?"
+    local tier = fishInfo and fishInfo.Tier and tostring(fishInfo.Tier) or "?"
     
-    -- Format pesan yang lebih sederhana dan pasti work
+    -- Format pesan yang lebih informatif
     local message = string.format(
-        "🎣 *FISH CAUGHT!*\n\n" ..
+        "🎣 *%s FISH CAUGHT!*\n\n" ..
         "*Player:* %s\n" ..
         "*Fish:* %s\n" .. 
         "*Rarity:* %s\n" ..
+        "*Tier:* %s\n" ..
         "*Weight:* %s\n" ..
         "*Price:* %s coins\n" ..
         "*Time:* %s\n" ..
-        "*Job ID:* %s",
+        "*Total Notified:* %d\n" ..
+        "*Job ID:* %s\n\n" ..
+        "⚡ *Auto-Fish System Active*",
+        fishRarityStr,
         displayName,
         fishName,
         fishRarityStr,
+        tier,
         weightDisplay,
         sellPrice,
         os.date("%H:%M:%S"),
+        rareFishCount,
         game.JobId
     )
     
@@ -241,6 +390,79 @@ local function ShouldSendByRarity(rarity)
     if CountSelected() == 0 then return false end
     local key = string.upper(tostring(rarity or "UNKNOWN"))
     return TelegramConfig.SelectedRarities[key] == true
+end
+
+-- Fungsi untuk mengirim notifikasi ikan ke Telegram
+local function SendFishNotification(fishInfo)
+    if not TelegramConfig.Enabled then return end
+    if not fishDetectionEnabled then return end
+    if not ShouldSendByRarity(fishInfo.Rarity) then return end
+    
+    local message = BuildTelegramMessage(fishInfo, nil, fishInfo.Rarity, fishInfo.Weight)
+    local success, result = SendTelegram(message)
+    
+    if success then
+        rareFishCount += 1
+        
+        -- Update rare fish counter di GUI
+        if RareFishLabel then
+            RareFishLabel:Set("🌟 Rare Fish Notified: " .. rareFishCount)
+        end
+        
+        print("[Telegram] ✅ Fish notification sent: " .. fishInfo.Name .. " (" .. fishInfo.Rarity .. ")")
+        
+        -- Show in-game notification
+        Rayfield:Notify({
+            Title = "🔔 " .. fishInfo.Rarity .. " FISH!",
+            Content = fishInfo.Name .. " - Notification sent to Telegram",
+            Duration = 5
+        })
+    else
+        print("[Telegram] ❌ Failed to send fish notification: " .. tostring(result))
+    end
+end
+
+-- Sistem monitor untuk fishing results yang lebih reliable
+local fishingConnection = nil
+
+local function SetupFishingMonitor()
+    if fishingConnection then
+        fishingConnection:Disconnect()
+        fishingConnection = nil
+    end
+    
+    fishingConnection = finishRemote.OnClientEvent:Connect(function(result)
+        if not result or not result.Success then return end
+        if not fishDetectionEnabled then return end
+        
+        -- Tunggu sebentar untuk memastikan data sudah terupdate
+        task.wait(0.5)
+        
+        -- Dapatkan info ikan dengan advanced detection
+        local fishInfo = GetAdvancedFishInfo(result)
+        if not fishInfo then return end
+        
+        -- Simpan data ikan terakhir
+        lastFishData = fishInfo
+        
+        -- Update fish count
+        fishCount += 1
+        if CounterLabel then
+            CounterLabel:Set("🐟 Fish Caught: " .. fishCount)
+        end
+        
+        -- Kirim notifikasi ke Telegram jika sesuai filter
+        SendFishNotification(fishInfo)
+        
+        -- Show in-game notification untuk semua ikan yang sesuai filter
+        if ShouldSendByRarity(fishInfo.Rarity) then
+            Rayfield:Notify({
+                Title = "🎣 " .. fishInfo.Rarity .. " FISH!",
+                Content = "Caught: " .. fishInfo.Name .. "\nPrice: " .. fishInfo.SellPrice .. " coins",
+                Duration = 4
+            })
+        end
+    end)
 end
 
 -- Fungsi test connection yang diperbaiki
@@ -279,225 +501,6 @@ local function TestTelegramConnection()
         return false
     end
 end
-
--- ================= FISH DETECTION FUNCTIONS =================
-
--- Fungsi untuk normalize rarity
-local function NormalizeRarity(rarity)
-    if not rarity then return "COMMON" end
-    
-    local r = string.upper(tostring(rarity))
-    
-    -- Handle tier numbers
-    if r == "1" or r == "TIER1" then return "COMMON" end
-    if r == "2" or r == "TIER2" then return "UNCOMMON" end
-    if r == "3" or r == "TIER3" then return "RARE" end
-    if r == "4" or r == "TIER4" then return "EPIC" end
-    if r == "5" or r == "TIER5" then return "LEGENDARY" end
-    if r == "6" or r == "TIER6" then return "MYTHIC" end
-    if r == "7" or r == "TIER7" then return "SECRET" end
-    
-    -- Handle string rarity
-    if r:find("COMMON") then return "COMMON" end
-    if r:find("UNCOMMON") then return "UNCOMMON" end
-    if r:find("RARE") then return "RARE" end
-    if r:find("EPIC") then return "EPIC" end
-    if r:find("LEGEND") then return "LEGENDARY" end
-    if r:find("MYTH") then return "MYTHIC" end
-    if r:find("SECRET") then return "SECRET" end
-    
-    return r
-end
-
--- Fungsi untuk mendapatkan data ikan dari berbagai sumber
-local function GetFishData()
-    local fishData = nil
-    
-    -- Method 1: Cek dari Replion (jika ada)
-    pcall(function()
-        if _G.Replion or getgenv().Replion then
-            local Replion = _G.Replion or getgenv().Replion
-            local DataReplion = Replion.Client:WaitReplion("Data")
-            if DataReplion then
-                local items = DataReplion:Get({"Inventory","Items"})
-                if type(items) == "table" and #items > 0 then
-                    -- Ambil ikan terakhir yang ditangkap
-                    local lastItem = items[#items]
-                    fishData = {
-                        Name = lastItem.Name or lastItem.id or "Unknown Fish",
-                        Rarity = lastItem.Rarity or lastItem.rarity or lastItem.Tier or "COMMON",
-                        Weight = lastItem.Weight or lastItem.weight or 0,
-                        SellPrice = lastItem.SellPrice or lastItem.price or 0,
-                        Id = lastItem.id or lastItem.Id
-                    }
-                end
-            end
-        end
-    end)
-    
-    -- Method 2: Cek dari player data structure
-    if not fishData then
-        pcall(function()
-            local playerData = player:FindFirstChild("Data") or player:FindFirstChild("PlayerData")
-            if playerData then
-                local lastFish = playerData:FindFirstChild("LastCaughtFish") or playerData:FindFirstChild("RecentFish")
-                if lastFish then
-                    fishData = {
-                        Name = lastFish:FindFirstChild("Name") and lastFish.Name.Value or "Unknown Fish",
-                        Rarity = lastFish:FindFirstChild("Rarity") and lastFish.Rarity.Value or "COMMON",
-                        Weight = lastFish:FindFirstChild("Weight") and lastFish.Weight.Value or 0,
-                        SellPrice = lastFish:FindFirstChild("Price") and lastFish.Price.Value or 0
-                    }
-                end
-            end
-        end)
-    end
-    
-    -- Method 3: Cek dari leaderstats (backup method)
-    if not fishData then
-        pcall(function()
-            local ls = player:FindFirstChild("leaderstats")
-            if ls then
-                local rarest = ls:FindFirstChild("Rarest Fish") or ls:FindFirstChild("RarestFish")
-                if rarest and rarest.Value then
-                    fishData = {
-                        Name = tostring(rarest.Value),
-                        Rarity = "LEGENDARY", -- Asumsi rarest fish = legendary
-                        Weight = 0,
-                        SellPrice = 0
-                    }
-                end
-            end
-        end)
-    end
-    
-    return fishData
-end
-
--- Hook ke finishRemote untuk detect ikan tertangkap
-local OriginalFireServer = finishRemote.FireServer
-finishRemote.FireServer = function(...)
-    local args = {...}
-    
-    -- Call original function
-    local result = OriginalFireServer(...)
-    
-    -- Detect fish setelah finish
-    task.spawn(function()
-        task.wait(0.3) -- Delay untuk data update
-        
-        local fishData = GetFishData()
-        
-        if fishData and TelegramConfig.Enabled then
-            local normalizedRarity = NormalizeRarity(fishData.Rarity)
-            
-            print("[FISH DETECTED]")
-            print("Name:", fishData.Name)
-            print("Rarity:", normalizedRarity)
-            print("Weight:", fishData.Weight)
-            print("Price:", fishData.SellPrice)
-            
-            -- Cek apakah rarity ini harus dikirim
-            if ShouldSendByRarity(normalizedRarity) then
-                print("[TELEGRAM] Sending notification for", normalizedRarity, "fish...")
-                
-                local message = BuildTelegramMessage(
-                    fishData,
-                    fishData.Id,
-                    normalizedRarity,
-                    fishData.Weight
-                )
-                
-                local success, result = SendTelegram(message)
-                
-                if success then
-                    print("[TELEGRAM] ✅ Notification sent successfully!")
-                    Rayfield:Notify({
-                        Title = "📨 Telegram Sent",
-                        Content = normalizedRarity .. " " .. fishData.Name,
-                        Duration = 3
-                    })
-                else
-                    print("[TELEGRAM] ❌ Failed to send:", result)
-                end
-            else
-                print("[TELEGRAM] Rarity", normalizedRarity, "not in selected filters")
-            end
-        end
-    end)
-    
-    return result
-end
-
--- Alternatif: Monitor inventory changes
-local function MonitorInventoryChanges()
-    task.spawn(function()
-        local lastInventorySize = 0
-        
-        while true do
-            task.wait(1)
-            
-            if TelegramConfig.Enabled and autofish then
-                pcall(function()
-                    -- Cek perubahan inventory
-                    if _G.Replion or getgenv().Replion then
-                        local Replion = _G.Replion or getgenv().Replion
-                        local DataReplion = Replion.Client:WaitReplion("Data")
-                        
-                        if DataReplion then
-                            local items = DataReplion:Get({"Inventory","Items"})
-                            
-                            if type(items) == "table" then
-                                local currentSize = #items
-                                
-                                -- Jika inventory bertambah = ada ikan baru
-                                if currentSize > lastInventorySize then
-                                    print("[INVENTORY] New item detected!")
-                                    
-                                    local newFish = items[currentSize] -- Item terakhir
-                                    local normalizedRarity = NormalizeRarity(newFish.Rarity or newFish.rarity or newFish.Tier)
-                                    
-                                    if ShouldSendByRarity(normalizedRarity) then
-                                        local fishData = {
-                                            Name = newFish.Name or newFish.id or "Unknown Fish",
-                                            Rarity = normalizedRarity,
-                                            Weight = newFish.Weight or newFish.weight or 0,
-                                            SellPrice = newFish.SellPrice or newFish.price or 0,
-                                            Id = newFish.id or newFish.Id
-                                        }
-                                        
-                                        local message = BuildTelegramMessage(
-                                            fishData,
-                                            fishData.Id,
-                                            normalizedRarity,
-                                            fishData.Weight
-                                        )
-                                        
-                                        SendTelegram(message)
-                                        
-                                        Rayfield:Notify({
-                                            Title = "📨 Telegram Sent",
-                                            Content = normalizedRarity .. " " .. fishData.Name,
-                                            Duration = 3
-                                        })
-                                    end
-                                end
-                                
-                                lastInventorySize = currentSize
-                            end
-                        end
-                    end
-                end)
-            end
-        end
-    end)
-end
-
--- Start monitoring
-MonitorInventoryChanges()
-
-print("[HOOK SYSTEM] Fish detection initialized!")
-print("[HOOK SYSTEM] Supported rarities:", table.concat({"COMMON","UNCOMMON","RARE","EPIC","LEGENDARY","MYTHIC","SECRET"}, ", "))
 
 -- ================= TELEPORT SYSTEM (FROM NIKZZ) =================
 
@@ -1159,6 +1162,47 @@ for _, r in ipairs(rarities) do
     })
 end
 
+HookTab:CreateSection("Fish Detection Settings")
+
+local RareFishLabel = HookTab:CreateLabel("🌟 Rare Fish Notified: 0")
+
+HookTab:CreateToggle({
+    Name = "🔔 Enable Fish Detection",
+    CurrentValue = true,
+    Callback = function(val)
+        fishDetectionEnabled = val
+        if val then
+            SetupFishingMonitor()
+            Rayfield:Notify({
+                Title = "✅ Fish Detection Enabled",
+                Content = "Telegram notifications active for selected rarities",
+                Duration = 4
+            })
+        else
+            Rayfield:Notify({
+                Title = "❌ Fish Detection Disabled", 
+                Content = "Telegram notifications paused",
+                Duration = 3
+            })
+        end
+    end
+})
+
+HookTab:CreateButton({
+    Name = "🔄 Reset Fish Counter",
+    Callback = function()
+        rareFishCount = 0
+        if RareFishLabel then
+            RareFishLabel:Set("🌟 Rare Fish Notified: 0")
+        end
+        Rayfield:Notify({
+            Title = "✅ Counter Reset",
+            Content = "Rare fish counter has been reset",
+            Duration = 3
+        })
+    end
+})
+
 HookTab:CreateSection("Test Notifications")
 
 HookTab:CreateButton({ 
@@ -1178,17 +1222,11 @@ HookTab:CreateButton({
             Tier = 5,
             SellPrice = 25000,
             Rarity = "LEGENDARY",
-            Weight = 3.45
+            Weight = 3.45,
+            RealRarity = "LEGENDARY"
         }
         
-        local message = BuildTelegramMessage(testFish, nil, "LEGENDARY", 3.45)
-        local success, result = SendTelegram(message)
-
-        Rayfield:Notify({
-            Title = success and "✅ Test Sent" or "❌ Test Failed",
-            Content = success and "Legendary fish test sent!" or "Failed to send test",
-            Duration = 4
-        })
+        SendFishNotification(testFish)
     end 
 })
 
@@ -1209,17 +1247,61 @@ HookTab:CreateButton({
             Tier = 4, 
             SellPrice = 12000,
             Rarity = "EPIC",
-            Weight = 2.15
+            Weight = 2.15,
+            RealRarity = "EPIC"
         }
         
-        local message = BuildTelegramMessage(testFish, nil, "EPIC", 2.15)
-        local success, result = SendTelegram(message)
+        SendFishNotification(testFish)
+    end 
+})
 
-        Rayfield:Notify({
-            Title = success and "✅ Test Sent" or "❌ Test Failed",
-            Content = success and "Epic fish test sent!" or "Failed to send test",
-            Duration = 4
-        })
+HookTab:CreateButton({ 
+    Name = "🎣 Test COMMON Fish", 
+    Callback = function()
+        if not TelegramConfig.ChatID or TelegramConfig.ChatID == "" then
+            Rayfield:Notify({
+                Title = "❌ Chat ID Required",
+                Content = "Please enter your Chat ID first",
+                Duration = 4
+            })
+            return
+        end
+
+        local testFish = {
+            Name = "Common Goldfish",
+            Tier = 1,
+            SellPrice = 100,
+            Rarity = "COMMON",
+            Weight = 0.5,
+            RealRarity = "COMMON"
+        }
+        
+        SendFishNotification(testFish)
+    end 
+})
+
+HookTab:CreateButton({ 
+    Name = "🎣 Test UNCOMMON Fish", 
+    Callback = function()
+        if not TelegramConfig.ChatID or TelegramConfig.ChatID == "" then
+            Rayfield:Notify({
+                Title = "❌ Chat ID Required",
+                Content = "Please enter your Chat ID first",
+                Duration = 4
+            })
+            return
+        end
+
+        local testFish = {
+            Name = "Uncommon Rainbow Trout",
+            Tier = 2,
+            SellPrice = 750,
+            Rarity = "UNCOMMON",
+            Weight = 1.8,
+            RealRarity = "UNCOMMON"
+        }
+        
+        SendFishNotification(testFish)
     end 
 })
 
@@ -1239,13 +1321,13 @@ HookTab:CreateButton({
             "📊 *FISHING STATUS REPORT*\n\n" ..
             "👤 Player: %s\n" ..
             "🎣 Total Fish: %d\n" ..
-            "🌟 Rare Fish: %d\n" ..
+            "🌟 Rare Fish Notified: %d\n" ..
             "🕒 Session Time: %s\n" ..
             "🔗 Job ID: %s\n\n" ..
             "⚡ *Status: ACTIVE*",
             player.Name,
             fishCount or 0,
-            0, -- rareFishCount bisa ditambahkan nanti
+            rareFishCount or 0,
             os.date("%H:%M:%S"),
             game.JobId
         )
@@ -1263,50 +1345,32 @@ HookTab:CreateButton({
 HookTab:CreateSection("Debug Tools")
 
 HookTab:CreateButton({
-    Name = "🔍 Debug: Test Fish Detection",
+    Name = "🔧 Debug Last Fish",
     Callback = function()
-        local fishData = GetFishData()
-        
-        if fishData then
-            print("=== FISH DATA DEBUG ===")
-            print("Name:", fishData.Name)
-            print("Rarity:", fishData.Rarity)
-            print("Weight:", fishData.Weight)
-            print("Price:", fishData.SellPrice)
+        if lastFishData then
+            local debugInfo = string.format(
+                "Name: %s\nRarity: %s\nPrice: %d\nWeight: %.2f\nTier: %d",
+                lastFishData.Name,
+                lastFishData.Rarity,
+                lastFishData.SellPrice,
+                lastFishData.Weight,
+                lastFishData.Tier
+            )
             
             Rayfield:Notify({
-                Title = "🔍 Fish Detected",
-                Content = string.format("%s (%s)", fishData.Name, fishData.Rarity),
-                Duration = 4
+                Title = "🔍 Last Fish Debug",
+                Content = debugInfo,
+                Duration = 8
             })
+            
+            print("[Debug] Last Fish:", lastFishData)
         else
             Rayfield:Notify({
                 Title = "❌ No Fish Data",
-                Content = "Catch a fish first or check Replion",
-                Duration = 4
+                Content = "No fish has been caught yet",
+                Duration = 3
             })
         end
-    end
-})
-
-HookTab:CreateButton({
-    Name = "🧪 Debug: Test Rarity Filter",
-    Callback = function()
-        print("=== RARITY FILTER DEBUG ===")
-        print("Telegram Enabled:", TelegramConfig.Enabled)
-        print("Selected Rarities:")
-        
-        for rarity, enabled in pairs(TelegramConfig.SelectedRarities) do
-            print(string.format("  %s: %s", rarity, enabled and "ON" or "OFF"))
-        end
-        
-        print("Total Selected:", CountSelected())
-        
-        Rayfield:Notify({
-            Title = "🧪 Filter Status",
-            Content = string.format("%d rarities selected", CountSelected()),
-            Duration = 3
-        })
     end
 })
 
@@ -1571,12 +1635,11 @@ local function startAutoSell()
         while autoSell do
             pcall(function()
                 -- Cek apakah Replion tersedia
-                if not (_G.Replion or getgenv().Replion) then 
+                if not Replion then 
                     task.wait(10)
                     return 
                 end
                 
-                local Replion = _G.Replion or getgenv().Replion
                 local DataReplion = Replion.Client:WaitReplion("Data")
                 local items = DataReplion and DataReplion:Get({"Inventory","Items"})
                 if type(items) ~= "table" then return end
@@ -1778,25 +1841,36 @@ MainTab:CreateButton({
     end
 })
 
--- Apply permanent lighting on start
-ApplyPermanentLighting()
+-- ================= INITIALIZATION =================
+
+-- Setup systems saat script mulai
+task.spawn(function()
+    task.wait(3) -- Tunggu GUI load dulu
+    SetupFishingMonitor()
+    ApplyPermanentLighting()
+    
+    print("[Fish Detection] ✅ Advanced fishing monitor activated")
+    print("[Rarity Monitor] ✅ Real-time rarity detection ready")
+    print("[Telegram] ✅ Hook system initialized")
+    print("[Telegram] ✅ Token:", TELEGRAM_BOT_TOKEN)
+    print("[Telegram] ✅ Chat ID:", TelegramConfig.ChatID or "Not set")
+    print("[Telegram] ✅ Enabled:", TelegramConfig.Enabled)
+    
+    Rayfield:Notify({
+        Title = "🔔 Advanced Fish Detection",
+        Content = "Rarity detection system activated!\nTelegram notifications ready for selected rarities.",
+        Duration = 6
+    })
+end)
 
 -- Notifikasi awal
 Rayfield:Notify({
     Title = "✅ AutoFish GUI Loaded",
-    Content = "Event-based detection ready! + Nikzz Features + FIXED Hook System!",
+    Content = "Event-based detection ready! + Nikzz Features (Teleport, Hook System, Utility) Added!",
     Duration = 6
 })
 
-print("🎣 Auto Fishing Hub + Nikzz Features + FIXED Hook System Loaded Successfully!")
+print("🎣 Auto Fishing Hub + Nikzz Features Loaded Successfully!")
 print("📍 Teleport System: 21 Islands + Events + Players")
-print("🔔 Hook System: Telegram Notifications with Rarity Filter - FIXED!")  
+print("🔔 Hook System: Telegram Notifications with Advanced Rarity Detection")  
 print("⚡ Utility: Walk on Water, NoClip, XRay, ESP, and more!")
-print("🐟 Fish Detection: Auto-detect fish rarity and send to Telegram!")
-print("========================================")
-print("🔧 NEW FEATURES:")
-print("  ✅ Auto fish detection system")
-print("  ✅ 3 detection methods (Replion, PlayerData, Leaderstats)")
-print("  ✅ Auto normalize rarity (Tier 1-7 & String)")
-print("  ✅ Debug tools in Hook System tab")
-print("========================================")
