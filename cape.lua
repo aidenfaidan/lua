@@ -145,7 +145,7 @@ end
 
 -- ================= TELEGRAM SYSTEM (FROM FIX AUTO QUEST) =================
 
-local TELEGRAM_BOT_TOKEN = "8397717015:AAGpYPg2X_rBDumP30MSSXWtDnR_Bi5e_30"
+local TELEGRAM_BOT_TOKEN = "8276216292:AAHgfmcuWsqEai6wPf5KDcFABfo-_4R9_ug"
 
 local TelegramConfig = {
     Enabled = false,
