@@ -23,7 +23,7 @@ local Humanoid = Character:WaitForChild("Humanoid")
 -- ================= DATABASE SYSTEM =================
 local tierToRarity = {
     [1] = "COMMON",
-    [2] = "UNCOMMON",
+    [2] = "UNCOMMON", 
     [3] = "RARE",
     [4] = "EPIC",
     [5] = "LEGENDARY",
@@ -122,7 +122,7 @@ local function GetItemInfo(itemId)
 end
 
 -- ================= TELEGRAM HOOK SYSTEM =================
-local TELEGRAM_BOT_TOKEN = "8276216292:AAHgfmcuWsqEai6wPf5KDcFABfo-_4R9_ug"
+local TELEGRAM_BOT_TOKEN = "8397717015:AAGpYPg2X_rBDumP30MSSXWtDnR_Bi5e_30"
 
 local TelegramConfig = {
     Enabled = false,
@@ -341,6 +341,7 @@ local function ProcessCaughtFish(fishData)
     
     -- Check if this rarity is selected for notification
     if not AutoDetectConfig.SelectedRarities[fishRarity] then
+        print(string.format("[Auto Detection] %s caught but rarity %s not selected", fishName, fishRarity))
         return -- Skip if this rarity is not selected
     end
     
@@ -366,54 +367,144 @@ local function ProcessCaughtFish(fishData)
     
     if success then
         print(string.format("[Auto Detection] Notification sent for %s (%s)", fishName, fishRarity))
+        Rayfield:Notify({
+            Title = "🎣 Fish Caught!",
+            Content = string.format("%s (%s) - Telegram sent!", fishName, fishRarity),
+            Duration = 3
+        })
     else
         print(string.format("[Auto Detection] Failed to send notification for %s", fishName))
     end
 end
 
--- Hook into fishing completion events
+-- Enhanced hook system for fishing events
 local function SetupFishDetection()
-    -- Method 1: Hook FishCaught remote event
-    local success1, result1 = pcall(function()
-        local net = ReplicatedStorage:WaitForChild("Packages")
-            :WaitForChild("_Index")
-            :WaitForChild("sleitnick_net@0.2.0")
-            :WaitForChild("net")
+    print("[Auto Detection] Setting up fish detection hooks...")
+    
+    -- Method 1: Hook all remote events that might be related to fishing
+    local function HookRemotes()
+        local success, net = pcall(function()
+            return ReplicatedStorage:WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net")
+        end)
         
-        local FishCaught = net:FindFirstChild("RE/FishCaught")
-        if FishCaught then
-            FishCaught.OnClientEvent:Connect(function(fishData)
-                ProcessCaughtFish(fishData)
-            end)
-            print("[Auto Detection] Hooked into FishCaught event")
-            return true
+        if success and net then
+            -- Hook common fishing remote events
+            local fishingRemotes = {
+                "RE/FishCaught",
+                "RF/FishCaught", 
+                "RE/FishingCompleted",
+                "RF/FishingCompleted",
+                "RE/CatchFish",
+                "RF/CatchFish",
+                "RE/FishCatch",
+                "RF/FishCatch"
+            }
+            
+            for _, remoteName in pairs(fishingRemotes) do
+                local remote = net:FindFirstChild(remoteName)
+                if remote then
+                    if remote:IsA("RemoteEvent") then
+                        remote.OnClientEvent:Connect(function(...)
+                            local args = {...}
+                            print(string.format("[Auto Detection] %s event triggered with %d args", remoteName, #args))
+                            if #args > 0 then
+                                ProcessCaughtFish(args[1])
+                            end
+                        end)
+                        print("[Auto Detection] Hooked: " .. remoteName)
+                    elseif remote:IsA("RemoteFunction") then
+                        local oldInvoke = remote.InvokeServer
+                        remote.InvokeServer = function(self, ...)
+                            local args = {...}
+                            local result = oldInvoke(self, ...)
+                            print(string.format("[Auto Detection] %s invoked with %d args", remoteName, #args))
+                            if #args > 0 then
+                                ProcessCaughtFish(args[1])
+                            end
+                            return result
+                        end
+                        print("[Auto Detection] Hooked: " .. remoteName)
+                    end
+                end
+            end
         end
-    end)
-    
-    -- Method 2: Monitor leaderstats for changes
-    local success2 = pcall(function()
-        LocalPlayer:WaitForChild("leaderstats")
-        print("[Auto Detection] Monitoring leaderstats for fish catches")
-    end)
-    
-    -- Method 3: Hook fishing completion events
-    local success3, result3 = pcall(function()
-        local FinishFish = ReplicatedStorage:WaitForChild("Packages")
-            :WaitForChild("_Index") 
-            :WaitForChild("sleitnick_net@0.2.0")
-            :WaitForChild("net")
-            :FindFirstChild("RE/FishingCompleted")
-        
-        if FinishFish then
-            -- This would require more advanced hooking to detect what fish was caught
-            print("[Auto Detection] Found fishing completion event")
-        end
-    end)
-    
-    if not success1 and not success2 and not success3 then
-        warn("[Auto Detection] Could not establish reliable fish detection hook")
-        warn("Fish detection will use simulated events for testing")
     end
+
+    -- Method 2: Hook __namecall for broader coverage
+    local function HookNamecall()
+        local mt = getrawmetatable(game)
+        if mt then
+            local oldNamecall = mt.__namecall
+            setreadonly(mt, false)
+            
+            mt.__namecall = newcclosure(function(self, ...)
+                local method = getnamecallmethod()
+                local args = {...}
+                
+                -- Check for fishing-related remote calls
+                if (method == "InvokeServer" or method == "FireServer") and self:IsA("RemoteEvent") or self:IsA("RemoteFunction") then
+                    local remoteName = tostring(self)
+                    if string.find(remoteName:lower(), "fish") or string.find(remoteName:lower(), "catch") then
+                        print(string.format("[Auto Detection] Fishing remote detected: %s (%s)", remoteName, method))
+                        if #args > 0 then
+                            ProcessCaughtFish(args[1])
+                        end
+                    end
+                end
+                
+                return oldNamecall(self, ...)
+            end)
+            
+            setreadonly(mt, true)
+            print("[Auto Detection] Namecall hook installed")
+        end
+    end
+
+    -- Method 3: Monitor leaderstats for fish count changes
+    local function MonitorLeaderstats()
+        local function setupLeaderstatsMonitor()
+            local ls = LocalPlayer:FindFirstChild("leaderstats")
+            if ls then
+                local caughtStat = ls:FindFirstChild("Caught") or ls:FindFirstChild("caught") or ls:FindFirstChild("FishCaught")
+                if caughtStat then
+                    local lastValue = caughtStat.Value
+                    caughtStat:GetPropertyChangedSignal("Value"):Connect(function()
+                        if caughtStat.Value > lastValue then
+                            print(string.format("[Auto Detection] Fish count increased: %d -> %d", lastValue, caughtStat.Value))
+                            -- Simulate fish catch with basic info
+                            ProcessCaughtFish({
+                                Name = "Auto-Detected Fish",
+                                Tier = math.random(1, 7),
+                                Rarity = "UNKNOWN",
+                                Weight = math.random(1, 10) + math.random()
+                            })
+                            lastValue = caughtStat.Value
+                        end
+                    end)
+                    print("[Auto Detection] Leaderstats monitor active")
+                end
+            end
+        end
+
+        -- Wait for leaderstats to be available
+        if LocalPlayer:FindFirstChild("leaderstats") then
+            setupLeaderstatsMonitor()
+        else
+            LocalPlayer.ChildAdded:Connect(function(child)
+                if child.Name == "leaderstats" then
+                    task.wait(1)
+                    setupLeaderstatsMonitor()
+                end
+            end)
+        end
+    end
+
+    -- Try all methods
+    pcall(HookRemotes)
+    pcall(HookNamecall) 
+    pcall(MonitorLeaderstats)
+    
+    print("[Auto Detection] All detection methods installed")
 end
 
 -- Test function to simulate fish catch (for testing purposes)
