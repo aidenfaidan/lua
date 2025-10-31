@@ -389,76 +389,6 @@ local function Enable8Bit()
     end)
 end
 
-local function RemoveParticles()
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
-            obj.Enabled = false
-            obj:Destroy()
-        end
-    end
-    
-    Workspace.DescendantAdded:Connect(function(obj)
-        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
-            obj.Enabled = false
-            obj:Destroy()
-        end
-    end)
-end
-
-local function RemoveSeaweed()
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        local name = obj.Name:lower()
-        if name:find("seaweed") or name:find("kelp") or name:find("coral") or name:find("plant") or name:find("weed") then
-            pcall(function()
-                if obj:IsA("Model") or obj:IsA("Part") or obj:IsA("MeshPart") then
-                    obj:Destroy()
-                end
-            end)
-        end
-    end
-    
-    Workspace.DescendantAdded:Connect(function(obj)
-        local name = obj.Name:lower()
-        if name:find("seaweed") or name:find("kelp") or name:find("coral") or name:find("plant") or name:find("weed") then
-            pcall(function()
-                if obj:IsA("Model") or obj:IsA("Part") or obj:IsA("MeshPart") then
-                    task.wait(0.1)
-                    obj:Destroy()
-                end
-            end)
-        end
-    end)
-end
-
-local function OptimizeWater()
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Terrain") then
-            obj.WaterReflectance = 0
-            obj.WaterTransparency = 1
-            obj.WaterWaveSize = 0
-            obj.WaterWaveSpeed = 0
-        end
-        
-        if obj:IsA("Part") or obj:IsA("MeshPart") then
-            if obj.Material == Enum.Material.Water then
-                obj.Reflectance = 0
-                obj.Transparency = 0.8
-            end
-        end
-    end
-    
-    RunService.Heartbeat:Connect(function()
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("Terrain") then
-                obj.WaterReflectance = 0
-                obj.WaterTransparency = 1
-                obj.WaterWaveSize = 0
-                obj.WaterWaveSpeed = 0
-            end
-        end
-    end)
-end
-
 local function NoClip()
     task.spawn(function()
         while Config.NoClip do
@@ -540,64 +470,6 @@ local function TeleportToPosition(pos)
         return true
     end
     return false
-end
-
-local function ScanActiveEvents()
-    local events = {}
-    local validEvents = {
-        "megalodon", "whale", "kraken", "hunt", "Ghost Worm", "Mount Hallow",
-        "admin", "Hallow Bay", "worm", "blackhole", "HalloweenFastTravel"
-    }
-
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") or obj:IsA("Folder") then
-            local name = obj.Name:lower()
-
-            for _, keyword in ipairs(validEvents) do
-                if name:find(keyword) and not name:find("boat") and not name:find("sharki") then
-                    local exists = false
-                    for _, e in ipairs(events) do
-                        if e.Name == obj.Name then
-                            exists = true
-                            break
-                        end
-                    end
-
-                    if not exists then
-                        local pos = Vector3.new(0, 0, 0)
-
-                        if obj:IsA("Model") then
-                            pcall(function()
-                                pos = obj:GetModelCFrame().Position
-                            end)
-                        elseif obj:IsA("BasePart") then
-                            pos = obj.Position
-                        elseif obj:IsA("Folder") and #obj:GetChildren() > 0 then
-                            local child = obj:GetChildren()[1]
-                            if child:IsA("Model") then
-                                pcall(function()
-                                    pos = child:GetModelCFrame().Position
-                                end)
-                            elseif child:IsA("BasePart") then
-                                pos = child.Position
-                            end
-                        end
-
-                        table.insert(events, {
-                            Name = obj.Name,
-                            Object = obj,
-                            Position = pos
-                        })
-                    end
-
-                    break
-                end
-            end
-        end
-    end
-
-    print("[EVENT SCANNER] Found " .. tostring(#events) .. " events.")
-    return events
 end
 
 -- ================= AUTO REJOIN SYSTEM =================
@@ -859,52 +731,6 @@ TeleportTab:CreateButton({
     end
 })
 
--- EVENTS SECTION
-TeleportTab:CreateSection("🎯 Events")
-
-local EventDrop = TeleportTab:CreateDropdown({
-    Name = "Select Event",
-    Options = {"Load events first"},
-    CurrentOption = {"Load events first"},
-    Callback = function(Option) end
-})
-
-TeleportTab:CreateButton({
-    Name = "Load Events",
-    Callback = function()
-        local Events = ScanActiveEvents()
-        local options = {}
-        
-        for i, event in ipairs(Events) do
-            table.insert(options, string.format("%d. %s", i, event.Name))
-        end
-        
-        if #options == 0 then
-            options = {"No events active"}
-        end
-        
-        EventDrop:Refresh(options)
-        Rayfield:Notify({
-            Title = "Events Loaded",
-            Content = string.format("Found %d events", #Events),
-            Duration = 2
-        })
-    end
-})
-
-TeleportTab:CreateButton({
-    Name = "Teleport to Event",
-    Callback = function()
-        local selected = EventDrop.CurrentOption[1]
-        local index = tonumber(selected:match("^(%d+)%."))
-        
-        if index and Events and Events[index] then
-            TeleportToPosition(Events[index].Position)
-            Rayfield:Notify({Title = "Teleported", Content = "Teleported to event", Duration = 2})
-        end
-    end
-})
-
 -- POSITION MANAGER
 TeleportTab:CreateSection("📍 Position Manager")
 
@@ -1157,30 +983,6 @@ UtilityTab:CreateSlider({
 })
 
 UtilityTab:CreateButton({
-    Name = "Remove Particles (Permanent)",
-    Callback = function()
-        RemoveParticles()
-        Rayfield:Notify({Title = "Particles Removed", Content = "All effects disabled permanently", Duration = 2})
-    end
-})
-
-UtilityTab:CreateButton({
-    Name = "Remove Seaweed (Permanent)",
-    Callback = function()
-        RemoveSeaweed()
-        Rayfield:Notify({Title = "Seaweed Removed", Content = "Water cleared permanently", Duration = 2})
-    end
-})
-
-UtilityTab:CreateButton({
-    Name = "Optimize Water (Permanent)",
-    Callback = function()
-        OptimizeWater()
-        Rayfield:Notify({Title = "Water Optimized", Content = "Water effects minimized permanently", Duration = 2})
-    end
-})
-
-UtilityTab:CreateButton({
     Name = "Reset Graphics",
     Callback = function()
         if LightingConnection then LightingConnection:Disconnect() end
@@ -1192,20 +994,6 @@ UtilityTab:CreateButton({
         Lighting.ClockTime = 14
         settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
         Rayfield:Notify({Title = "Graphics Reset", Content = "Back to normal", Duration = 2})
-    end
-})
-
--- CAMERA
-UtilityTab:CreateSection("📷 Camera")
-
-UtilityTab:CreateButton({
-    Name = "Remove Camera Shake",
-    Callback = function()
-        local cam = Workspace.CurrentCamera
-        if cam then
-            cam.FieldOfView = 70
-        end
-        Rayfield:Notify({Title = "Camera Fixed", Content = "Shake removed", Duration = 2})
     end
 })
 
