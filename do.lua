@@ -1,4 +1,4 @@
---// AUTO FISH GUI - Versi HyRexxyy Event-Based + Nikzz Features
+--// AUTO FISH GUI
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -19,6 +19,31 @@ local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 local Humanoid = Character:WaitForChild("Humanoid")
+
+-- ================= FISHING REMOTES =================
+local net = ReplicatedStorage
+    :WaitForChild("Packages")
+    :WaitForChild("_Index")
+    :WaitForChild("sleitnick_net@0.2.0")
+    :WaitForChild("net")
+
+local equipRemote = net:WaitForChild("RE/EquipToolFromHotbar")
+local rodRemote = net:WaitForChild("RF/ChargeFishingRod")
+local miniGameRemote = net:WaitForChild("RF/RequestFishingMinigameStarted")
+local finishRemote = net:WaitForChild("RE/FishingCompleted")
+
+-- ================= FISHING VARIABLES =================
+local autofish = false
+local perfectCast = false
+local autoRecastDelay = 2
+local fishCount = 0
+local autoSell = false
+local lastSellTime = 0
+local antiAFK = false
+
+-- ================= AUTO SELL CONFIG =================
+local AUTO_SELL_THRESHOLD = 60
+local AUTO_SELL_DELAY = 60
 
 -- ================= DATABASE SYSTEM =================
 local tierToRarity = {
@@ -119,6 +144,101 @@ local function GetItemInfo(itemId)
     end
     info.Rarity = string.upper(tostring(info.Rarity or "UNKNOWN"))
     return info
+end
+
+-- ================= FISHING FUNCTIONS =================
+local function startAntiAFK()
+    task.spawn(function()
+        while antiAFK do
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new())
+            end)
+            task.wait(30)
+        end
+    end)
+end
+
+local function startAutoSell()
+    task.spawn(function()
+        while autoSell do
+            pcall(function()
+                local Replion = ReplicatedStorage:FindFirstChild("Replion")
+                if not Replion then
+                    task.wait(10)
+                    return
+                end
+                
+                local DataReplion = Replion.Client:WaitReplion("Data")
+                local items = DataReplion and DataReplion:Get({"Inventory","Items"})
+                if type(items) ~= "table" then return end
+                
+                local unfavoritedCount = 0
+                for _, item in ipairs(items) do
+                    if not item.Favorited then
+                        unfavoritedCount = unfavoritedCount + (item.Count or 1)
+                    end
+                end
+                
+                if unfavoritedCount >= AUTO_SELL_THRESHOLD and os.time() - lastSellTime >= AUTO_SELL_DELAY then
+                    local sellFunc = net:FindFirstChild("RF/SellAllItems")
+                    if sellFunc then
+                        task.spawn(sellFunc.InvokeServer, sellFunc)
+                        Rayfield:Notify({
+                            Title = "💰 Auto Sell",
+                            Content = "Selling non-favorited items...",
+                            Duration = 3
+                        })
+                        lastSellTime = os.time()
+                    end
+                end
+            end)
+            task.wait(10)
+        end
+    end)
+end
+
+local function AutoFishCycle()
+    pcall(function()
+        equipRemote:FireServer(1)
+        task.wait(0.1)
+        
+        local timestamp = perfectCast and 9999999999 or (tick() + math.random())
+        rodRemote:InvokeServer(timestamp)
+        task.wait(0.5)
+        
+        local x = perfectCast and -1.238 or (math.random(-1000,1000)/1000)
+        local y = perfectCast and 0.969 or (math.random(0,1000)/1000)
+        miniGameRemote:InvokeServer(x, y)
+        
+        local caught = false
+        local rodTool = player.Backpack:FindFirstChild("FishingRod") or player.Character:FindFirstChild("FishingRod")
+        
+        if rodTool then
+            local connection
+            connection = rodTool:GetAttributeChangedSignal("HasFish"):Connect(function()
+                if rodTool:GetAttribute("HasFish") == true then
+                    caught = true
+                    connection:Disconnect()
+                end
+            end)
+            
+            local timer = 0
+            while not caught and timer < 15 do
+                task.wait(0.1)
+                timer += 0.1
+            end
+        else
+            task.wait(5)
+        end
+        
+        finishRemote:FireServer()
+        task.wait(0.1)
+        finishRemote:FireServer()
+        
+        fishCount += 1
+        CounterLabel:Set("🐟 Fish Caught: " .. fishCount)
+    end)
 end
 
 -- ================= UTILITY FUNCTIONS =================
@@ -426,14 +546,11 @@ local function SetupAutoRejoin()
     end
 end
 
--- ================= MAIN VARIABLES =================
-local antiAFK = false
-
 -- ================= GUI SETUP =================
 local Window = Rayfield:CreateWindow({
-    Name = "🎣 Auto Fishing Hub - Nikzz Integrated",
-    LoadingTitle = "Fishing AutoFarm",
-    LoadingSubtitle = "By HyRexxyy x GPT + Nikzz Features",
+    Name = "🎣 FishIt! - @h4pna",
+    LoadingTitle = "FishIt! Hub",
+    LoadingSubtitle = "Made with Love <3",
     ConfigurationSaving = { Enabled = true, FolderName = "AutoFishSettings" },
     KeySystem = false
 })
@@ -441,19 +558,116 @@ local Window = Rayfield:CreateWindow({
 -- ================= MAIN TAB =================
 local MainTab = Window:CreateTab("⚙️ Main Controls")
 
--- ANTI AFK SYSTEM
-local function startAntiAFK()
-    task.spawn(function()
-        while antiAFK do
-            pcall(function()
-                VirtualUser:CaptureController()
-                VirtualUser:ClickButton2(Vector2.new())
-            end)
-            task.wait(30)
-        end
-    end)
-end
+-- FISH COUNTER LABEL
+local CounterLabel = MainTab:CreateLabel("🐟 Fish Caught: 0")
 
+-- AUTO FISHING TOGGLE
+MainTab:CreateToggle({
+    Name = "🎣 Enable Auto Fishing",
+    CurrentValue = false,
+    Callback = function(val)
+        autofish = val
+        if val then
+            task.spawn(function()
+                while autofish do
+                    AutoFishCycle()
+                    task.wait(autoRecastDelay)
+                end
+            end)
+            Rayfield:Notify({
+                Title = "✅ Auto Fishing Enabled",
+                Content = "Auto fishing system activated!",
+                Duration = 4
+            })
+        else
+            Rayfield:Notify({
+                Title = "❌ Auto Fishing Disabled",
+                Content = "Auto fishing system turned off",
+                Duration = 3
+            })
+        end
+    end
+})
+
+-- PERFECT CAST TOGGLE
+MainTab:CreateToggle({
+    Name = "✨ Use Perfect Cast",
+    CurrentValue = false,
+    Callback = function(val)
+        perfectCast = val
+        Rayfield:Notify({
+            Title = "Perfect Cast",
+            Content = val and "Enabled - Perfect catches every time!" or "Disabled - Random casting",
+            Duration = 3
+        })
+    end
+})
+
+-- AUTO RECAST DELAY SLIDER
+MainTab:CreateSlider({
+    Name = "⏱️ Auto Recast Delay (seconds)",
+    Range = {0.5, 5},
+    Increment = 0.1,
+    CurrentValue = autoRecastDelay,
+    Callback = function(val)
+        autoRecastDelay = val
+        Rayfield:Notify({
+            Title = "Recast Delay Updated",
+            Content = "Delay set to " .. val .. " seconds",
+            Duration = 2
+        })
+    end
+})
+
+-- AUTO SELL TOGGLE
+MainTab:CreateToggle({
+    Name = "💰 Auto Sell Non-Favorited Fish",
+    CurrentValue = false,
+    Callback = function(val)
+        autoSell = val
+        if val then
+            startAutoSell()
+            Rayfield:Notify({
+                Title = "✅ Auto Sell Enabled",
+                Content = "Will automatically sell when non-favorited fish > " .. AUTO_SELL_THRESHOLD,
+                Duration = 4
+            })
+        else
+            Rayfield:Notify({
+                Title = "❌ Auto Sell Disabled",
+                Content = "Auto selling feature turned off",
+                Duration = 3
+            })
+        end
+    end
+})
+
+-- MANUAL SELL BUTTON
+MainTab:CreateButton({
+    Name = "🛒 Sell All Non-Favorited Fish Now",
+    Callback = function()
+        pcall(function()
+            local sellFunc = net:FindFirstChild("RF/SellAllItems")
+            if sellFunc then
+                sellFunc:InvokeServer()
+                Rayfield:Notify({
+                    Title = "✅ Manual Sell",
+                    Content = "Sold all non-favorited items!",
+                    Duration = 3
+                })
+                lastSellTime = os.time()
+            else
+                Rayfield:Notify({
+                    Title = "❌ Sell Failed",
+                    Content = "Sell function not found",
+                    Duration = 3
+                })
+            end
+        end)
+    end
+})
+
+-- ANTI AFK SYSTEM
 MainTab:CreateToggle({
     Name = "🛡️ Anti AFK",
     CurrentValue = false,
@@ -936,7 +1150,7 @@ end)
 -- ================= NOTIFICATION =================
 Rayfield:Notify({
     Title = "✅ AutoFish GUI Loaded - Nikzz Integrated",
-    Content = "All Features Ready! Database + Utility + Teleport",
+    Content = "All Features Ready! Database + Utility + Teleport + Auto Fishing",
     Duration = 6
 })
 
@@ -944,3 +1158,4 @@ print("🎣 Auto Fishing Hub - All Nikzz Features Integrated Successfully!")
 print("📊 Database System: " .. (database and "Loaded" or "Fallback"))
 print("🚀 Teleport System: " .. #IslandsData .. " Islands")
 print("⚡ Utility Features: All Systems Go")
+print("🎣 Auto Fishing: Ready with Perfect Cast & Auto Sell")
