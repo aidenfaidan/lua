@@ -1,4 +1,4 @@
---// AUTO FISH GUI - Versi HyRexxyy Event-Based + Nikzz Features
+--// AUTO FISH GUI
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -10,9 +10,9 @@ local antiAFK = false
 
 -- GUI Setup
 local Window = Rayfield:CreateWindow({
-    Name = "🎣 Auto Fishing Hub",
-    LoadingTitle = "Fishing AutoFarm",
-    LoadingSubtitle = "By HyRexxyy x GPT + Nikzz Features",
+    Name = "🎣 Fish It - h4pna",
+    LoadingTitle = "Automation Fishing",
+    LoadingSubtitle = "Made with love <3",
     ConfigurationSaving = { Enabled = true, FolderName = "AutoFishSettings" },
     KeySystem = false
 })
@@ -57,7 +57,7 @@ MainTab:CreateToggle({
 
 -- CLOSE GUI BUTTON
 MainTab:CreateButton({
-    Name = "❌ Close GUI",
+    Name = "❌ EXIT",
     Callback = function()
         Rayfield:Destroy()
     end
