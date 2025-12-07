@@ -97,8 +97,8 @@ end
 local ROCK_FOLDER_NAME = "Rocks"
 local ROCK_FOLDER = Workspace:FindFirstChild(ROCK_FOLDER_NAME)
 
--- Folder monsters (asumsi ada folder Monsters di Workspace)
-local MONSTER_FOLDER_NAME = "Monsters"
+-- Folder monsters - DIPERBARUI: Sekarang mencari di folder "Living"
+local MONSTER_FOLDER_NAME = "Living"
 local MONSTER_FOLDER = Workspace:FindFirstChild(MONSTER_FOLDER_NAME)
 
 -- Billboard container
@@ -300,7 +300,7 @@ end
 
 local function ScanMonster(monsterName)
     if not MONSTER_FOLDER then 
-        -- Jika tidak ada folder Monsters, coba cari di seluruh Workspace
+        -- Jika tidak ada folder Living, coba cari di seluruh Workspace
         for _, model in ipairs(Workspace:GetDescendants()) do
             if model:IsA("Model") and model.Name == monsterName then
                 pcall(function() CreateMonsterESP(model) end)
@@ -309,6 +309,7 @@ local function ScanMonster(monsterName)
         return
     end
     
+    -- Cari monster di dalam folder Living dan subfoldernya
     for _, desc in ipairs(MONSTER_FOLDER:GetDescendants()) do
         if desc:IsA("Model") and desc.Name == monsterName then
             pcall(function() CreateMonsterESP(desc) end)
@@ -532,7 +533,7 @@ end
 
 -- Informasi jika folder monster tidak ditemukan
 if not MONSTER_FOLDER then
-    MonsterTab:CreateLabel("⚠️ Folder 'Monsters' tidak ditemukan di Workspace")
+    MonsterTab:CreateLabel("⚠️ Folder 'Living' tidak ditemukan di Workspace")
     MonsterTab:CreateLabel("ESP akan mencari monster di seluruh Workspace")
 end
 
@@ -563,5 +564,6 @@ print("=====================================")
 print("DarkCarbon ESP System Loaded")
 print("Total Ore Types: " .. #oreNames)
 print("Total Monster Types: " .. #monsterNames)
+print("Monster Folder: Living")
 print("ESP Type: Highlight (Follows Object Shape)")
 print("=====================================")
