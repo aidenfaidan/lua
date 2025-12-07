@@ -190,7 +190,7 @@ RunService.Heartbeat:Connect(function(dt)
     end
 end)
 
--- ===== Initialize Rayfield =====
+-- ===== Initialize Rayfield Window =====
 local Window = Rayfield:CreateWindow({
     Name = "DarkCarbon — Dev UI",
     LoadingTitle = "Loading DarkCarbon Hub...",
@@ -205,9 +205,9 @@ local Window = Rayfield:CreateWindow({
 })
 
 -- ===== Create Tabs =====
-local HomeTab = Window:CreateTab("Home", "rbxassetid://4483345998")
-local ControlsTab = Window:CreateTab("Controls", "rbxassetid://4483345998")
-local SettingsTab = Window:CreateTab("Settings", "rbxassetid://4483345998")
+local HomeTab = Window:CreateTab("Home", nil) -- Icon bisa ditambahkan jika ada
+local ControlsTab = Window:CreateTab("Controls", nil)
+local SettingsTab = Window:CreateTab("Settings", nil)
 
 -- ===== Home Tab Content =====
 local HomeSection = HomeTab:CreateSection("Welcome")
@@ -315,29 +315,30 @@ local oreNames = {}
 for n, _ in pairs(ORE_DATA) do table.insert(oreNames, n) end
 table.sort(oreNames)
 
+local toggleElements = {} -- Simpan toggle untuk nanti update warna
+
 for _, oreName in ipairs(oreNames) do
     local toggle = SettingsTab:CreateToggle({
         Name = oreName .. " (" .. tostring(ORE_DATA[oreName] or 0) .. ")",
         CurrentValue = false,
-        Flag = "Toggle_" .. oreName,
+        Flag = "Toggle_" .. oreName, -- Flag untuk identification
         Callback = function(value)
             OreToggle[oreName] = value
             if value then
                 ScanOre(oreName)
-                toggle:Set(Color3.new(0, 1, 0)) -- Green when on
+                -- Set warna berdasarkan ore
+                local oreColor = GetOreColor(oreName)
+                -- Tidak ada method Set() di Rayfield untuk toggle, kita hanya update state
             else
                 for hitbox, data in pairs(ESP_ByHitbox) do
                     if data.oreName == oreName then RemoveESP(hitbox) end
                 end
-                toggle:Set(Color3.new(1, 1, 1)) -- White when off
             end
             UpdateESPCount()
         end,
     })
     
-    -- Set initial color based on ore type
-    local oreColor = GetOreColor(oreName)
-    toggle:Set(oreColor)
+    toggleElements[oreName] = toggle
 end
 
 local UISettings = SettingsTab:CreateSection("UI Settings")
@@ -345,7 +346,9 @@ SettingsTab:CreateButton({
     Name = "Destroy GUI",
     Callback = function()
         Rayfield:Destroy()
-        BillboardGuiContainer:Destroy()
+        if BillboardGuiContainer then
+            BillboardGuiContainer:Destroy()
+        end
     end,
 })
 
@@ -369,16 +372,25 @@ SettingsTab:CreateButton({
 
 -- ===== Additional Features =====
 -- Auto-update ESP count periodically
-local updateCountConnection = RunService.Heartbeat:Connect(function()
-    UpdateESPCount()
+local updateCountConnection = RunService.Heartbeat:Connect(function(dt)
+    -- Update setiap 1 detik
+    accumulator = accumulator + dt
+    if accumulator > 1 then
+        accumulator = 0
+        UpdateESPCount()
+    end
 end)
 
 -- Cleanup when GUI is destroyed
+local windowDestroyed = false
 Rayfield:OnDestroy(function()
+    windowDestroyed = true
     if updateCountConnection then
         updateCountConnection:Disconnect()
     end
-    BillboardGuiContainer:Destroy()
+    if BillboardGuiContainer then
+        BillboardGuiContainer:Destroy()
+    end
     
     -- Clear all ESP
     for hitbox, _ in pairs(ESP_ByHitbox) do
@@ -393,4 +405,24 @@ Rayfield:Notify({
     Duration = 5,
 })
 
+-- ===== Character Handling =====
+-- Pastikan ESP tetap berjalan saat karakter respawn
+player.CharacterAdded:Connect(function(character)
+    character:WaitForChild("HumanoidRootPart", 10)
+    -- Rescan semua ore yang aktif
+    for oreName, state in pairs(OreToggle) do
+        if state then
+            task.wait(0.5)
+            ScanOre(oreName)
+        end
+    end
+end)
+
 print("DarkCarbon UI + OreESP loaded with Rayfield — Use Settings tab to toggle ESP")
+
+-- Fungsi untuk debug: cek apakah window dan tab berjalan
+task.wait(1)
+print("Rayfield Window initialized:", Window ~= nil)
+print("Home Tab created:", HomeTab ~= nil)
+print("Controls Tab created:", ControlsTab ~= nil)
+print("Settings Tab created:", SettingsTab ~= nil)
