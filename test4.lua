@@ -85,11 +85,6 @@ end
 
 -- Fungsi utama untuk mencocokkan nama monster dengan angka
 local function MatchMonsterName(fullName)
-    -- Skip jika adalah player (Berserker_Vek atau nama lain dengan underscore)
-    if fullName:find("_") then
-        return nil
-    end
-    
     -- Cek cache dulu untuk performa
     if MonsterPatternCache[fullName] then
         return MonsterPatternCache[fullName]
@@ -668,7 +663,6 @@ local function PrintMonsterMatchExamples()
         "Blight Pyromancer7309",
         "Deathaxe Skeleton7902",
         "Bomber8440",
-        "Berserker_Vek", -- Should be ignored
         "Player123", -- Should be ignored
         "Zombie1234",
         "Elite Rogue Skeleton9999"
@@ -709,10 +703,4 @@ PrintMonsterMatchExamples()
 
 print("\n✅ System Ready - Monster names will be auto-detected!")
 print("Examples that will work:")
-print("  - 'Axe Skeleton8444' → 'Axe Skeleton'")
-print("  - 'Blazing Slime1234' → 'Blazing Slime'")
-print("  - 'Blight Pyromancer5678' → 'Blight Pyromancer'")
-print("\n❌ Names that will be ignored:")
-print("  - 'Berserker_Vek' (player name)")
-print("  - Any name with underscore")
 print("=====================================")
