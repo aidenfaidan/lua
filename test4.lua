@@ -1,6 +1,6 @@
 -- ============================================================--
 -- DARKCARBON HUB + Ore ESP + Monster ESP - Rayfield Version
--- Tab: Ore ESP dan Monster ESP
+-- Tab: Ore ESP dan Monster ESP (Fixed based on reference)
 -- ============================================================--
 
 -- ===== Load Rayfield =====
@@ -99,6 +99,9 @@ end
 local ROCK_FOLDER_NAME = "Rocks"
 local ROCK_FOLDER = Workspace:FindFirstChild(ROCK_FOLDER_NAME)
 
+-- Find the Living folder (CRITICAL for Monster ESP)
+local LIVING_FOLDER = workspace:WaitForChild("Living") or workspace:FindFirstChild("Living")
+
 -- Billboard containers
 local OreBillboardContainer = Instance.new("ScreenGui")
 OreBillboardContainer.Name = "OreESP_Billboards"
@@ -127,33 +130,6 @@ local function GetOreHP(hitbox)
     return ORE_DATA[model.Name] or 0
 end
 
-local function GetMonsterHP(model)
-    if not model then return 0 end
-    -- Cari Humanoid untuk HP monster
-    local humanoid = model:FindFirstChildWhichIsA("Humanoid")
-    if humanoid then
-        return math.floor(humanoid.Health)
-    end
-    
-    -- Coba attribute
-    local hpAttr = model:GetAttribute("Health") or model:GetAttribute("HP")
-    if type(hpAttr) == "number" then
-        return hpAttr
-    end
-    
-    -- Cari NumberValue/IntValue dengan nama HP
-    for _, v in ipairs(model:GetDescendants()) do
-        if v:IsA("NumberValue") or v:IsA("IntValue") then
-            local n = string.lower(v.Name)
-            if n == "hp" or n == "health" then 
-                return v.Value 
-            end
-        end
-    end
-    
-    return 0
-end
-
 local function GetActualOreModel(hitbox)
     local model = hitbox.Parent
     if model and model:IsA("Model") then
@@ -164,27 +140,6 @@ local function GetActualOreModel(hitbox)
         return parent
     end
     return model or hitbox
-end
-
-local function GetMonsterRootPart(model)
-    -- Cari HumanoidRootPart terlebih dahulu
-    local rootPart = model:FindFirstChild("HumanoidRootPart")
-    if rootPart then return rootPart end
-    
-    -- Cari bagian dengan nama RootPart, Torso, atau UpperTorso
-    rootPart = model:FindFirstChild("RootPart") or 
-               model:FindFirstChild("Torso") or 
-               model:FindFirstChild("UpperTorso")
-    if rootPart then return rootPart end
-    
-    -- Jika tidak ditemukan, cari BasePart pertama
-    for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") and part.Name ~= "Hitbox" then
-            return part
-        end
-    end
-    
-    return nil
 end
 
 -- ===== ORE ESP Functions =====
@@ -259,28 +214,77 @@ local function ScanOre(oreName)
     end
 end
 
--- ===== MONSTER ESP Functions =====
-local function CreateMonsterESP(model)
-    if not model or not model:IsA("Model") then return end
-    if MonsterESP_ByModel[model] then return end
+-- ===== MONSTER ESP Functions (FIXED based on reference) =====
+local function GetClaimantName(monsterModel)
+    local status = monsterModel:FindFirstChild("Status")
+    if not status then return nil end
     
-    local monsterName = model.Name
+    local damageDone = status:FindFirstChild("DamageDone")
+    if not damageDone or not damageDone.Value then return nil end
+    
+    local claimant = damageDone.Value
+    if claimant:IsA("Player") then
+        return claimant.Name
+    elseif claimant:IsA("Model") then
+        return claimant.Name
+    elseif type(claimant) == "string" then
+        return claimant
+    end
+    return nil
+end
+
+local function IsMonsterAttacking(monsterModel)
+    local status = monsterModel:FindFirstChild("Status")
+    if not status then return false end
+    
+    local attacking = status:FindFirstChild("Attacking")
+    if not attacking then return false end
+    
+    local attackValue = attacking.Value
+    if type(attackValue) == "boolean" then 
+        return attackValue == true
+    elseif type(attackValue) == "number" then 
+        return attackValue > 0
+    elseif type(attackValue) == "string" then 
+        return attackValue:lower() == "true" or attackValue == "1"
+    end
+    return false
+end
+
+local function GetMonsterHP(monsterModel)
+    local humanoid = monsterModel:FindFirstChildWhichIsA("Humanoid")
+    if humanoid then
+        return math.floor(humanoid.Health)
+    end
+    return 0
+end
+
+local function CreateMonsterESP(monsterModel)
+    if not monsterModel or not monsterModel:IsA("Model") then return end
+    if MonsterESP_ByModel[monsterModel] then return end
+    
+    local monsterName = monsterModel.Name
     if not MonsterToggle[monsterName] then return end
     local color = GetMonsterColor(monsterName)
     
-    local rootPart = GetMonsterRootPart(model)
+    -- Find the best part to attach the ESP to
+    local rootPart = monsterModel:FindFirstChild("HumanoidRootPart") or 
+                     monsterModel.PrimaryPart or 
+                     monsterModel:FindFirstChildWhichIsA("BasePart")
     if not rootPart then return end
     
+    -- 1. Create HIGHLIGHT
     local highlight = Instance.new("Highlight")
     highlight.Name = "MonsterHighlight"
-    highlight.Adornee = model
+    highlight.Adornee = monsterModel
     highlight.FillColor = color
     highlight.OutlineColor = color
     highlight.FillTransparency = 0.6
     highlight.OutlineTransparency = 0.2
     highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    highlight.Parent = model
+    highlight.Parent = monsterModel
     
+    -- 2. Create BILLBOARD for info
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "MonsterBillboard"
     billboard.Adornee = rootPart
@@ -299,18 +303,40 @@ local function CreateMonsterESP(model)
     label.TextStrokeColor3 = Color3.new(0, 0, 0)
     label.Parent = billboard
 
-    MonsterESP_ByModel[model] = { 
+    -- Get initial info for the label
+    local claimant = GetClaimantName(monsterModel)
+    local hp = GetMonsterHP(monsterModel)
+    local isAttacking = IsMonsterAttacking(monsterModel)
+    
+    local statusText = ""
+    if claimant then
+        statusText = claimant == player.Name and "[YOU]" or "[" .. claimant .. "]"
+    else
+        statusText = "[UNCLAIMED]"
+    end
+    
+    if isAttacking then
+        statusText = statusText .. " ⚔️"
+    end
+    
+    MonsterESP_ByModel[monsterModel] = { 
         highlight = highlight, 
         billboard = billboard, 
         label = label, 
         monsterName = monsterName, 
-        model = model,
-        rootPart = rootPart
+        model = monsterModel,
+        rootPart = rootPart,
+        claimant = claimant
     }
+    
+    -- Set the initial text
+    if label then
+        label.Text = string.format("%s %s | HP: %d", monsterName, statusText, hp)
+    end
 end
 
-local function RemoveMonsterESP(model)
-    local data = MonsterESP_ByModel[model]
+local function RemoveMonsterESP(monsterModel)
+    local data = MonsterESP_ByModel[monsterModel]
     if not data then return end
     pcall(function()
         if data.highlight and data.highlight.Parent then 
@@ -320,17 +346,21 @@ local function RemoveMonsterESP(model)
             data.billboard:Destroy() 
         end
     end)
-    MonsterESP_ByModel[model] = nil
+    MonsterESP_ByModel[monsterModel] = nil
 end
 
 local function ScanMonster(monsterName)
-    -- Cari semua model monster di Workspace
-    for _, model in ipairs(Workspace:GetDescendants()) do
-        if model:IsA("Model") and model.Name == monsterName then
-            -- Pastikan ini benar-benar monster (memiliki Humanoid atau tanda lainnya)
-            local humanoid = model:FindFirstChildWhichIsA("Humanoid")
-            if humanoid then
-                pcall(function() CreateMonsterESP(model) end)
+    if not LIVING_FOLDER then 
+        warn("[Monster ESP] 'Living' folder not found in workspace.")
+        return 
+    end
+    
+    for _, entity in ipairs(LIVING_FOLDER:GetChildren()) do
+        if entity:IsA("Model") and entity.Name == monsterName then
+            if entity:FindFirstChild("Status") then
+                pcall(function() 
+                    CreateMonsterESP(entity) 
+                end)
             end
         end
     end
@@ -355,19 +385,19 @@ local function WatchOreFolder(folder)
 end
 
 local function WatchMonsters()
-    -- Monitor untuk monster baru yang muncul
-    Workspace.DescendantAdded:Connect(function(obj)
+    if not LIVING_FOLDER then return end
+    
+    -- Monitor for new monsters that appear
+    LIVING_FOLDER.ChildAdded:Connect(function(obj)
         if obj:IsA("Model") and MonsterToggle[obj.Name] then
-            -- Tunggu sebentar untuk memastikan model sudah lengkap
             task.wait(0.1)
-            local humanoid = obj:FindFirstChildWhichIsA("Humanoid")
-            if humanoid then
+            if obj:FindFirstChild("Status") then
                 pcall(function() CreateMonsterESP(obj) end)
             end
         end
     end)
     
-    Workspace.DescendantRemoving:Connect(function(obj)
+    LIVING_FOLDER.ChildRemoved:Connect(function(obj)
         if obj:IsA("Model") and MonsterESP_ByModel[obj] then
             pcall(function() RemoveMonsterESP(obj) end)
         end
@@ -433,12 +463,30 @@ local function UpdateESP()
             else
                 local hp = GetMonsterHP(model)
                 local dist = playerRoot and data.rootPart and math.floor((playerRoot.Position - data.rootPart.Position).Magnitude) or 0
-                if data.label then
-                    data.label.Text = string.format("%s | HP: %d | %dm", data.monsterName, hp, dist)
+                local claimant = GetClaimantName(model)
+                local isAttacking = IsMonsterAttacking(model)
+                
+                local statusText = ""
+                if claimant then
+                    statusText = claimant == player.Name and "[YOU]" or "[" .. claimant .. "]"
+                else
+                    statusText = "[UNCLAIMED]"
                 end
-                -- Update billboard adornee jika rootPart berubah
+                
+                if isAttacking then
+                    statusText = statusText .. " ⚔️"
+                end
+                
+                if data.label then
+                    data.label.Text = string.format("%s %s | HP: %d | %dm", 
+                        data.monsterName, statusText, hp, dist)
+                end
+                
+                -- Update billboard adornee if rootPart changed
                 if data.rootPart and data.rootPart.Parent ~= model then
-                    local newRoot = GetMonsterRootPart(model)
+                    local newRoot = model:FindFirstChild("HumanoidRootPart") or 
+                                   model.PrimaryPart or 
+                                   model:FindFirstChildWhichIsA("BasePart")
                     if newRoot then
                         data.billboard.Adornee = newRoot
                         data.rootPart = newRoot
@@ -554,6 +602,12 @@ for _, monsterName in ipairs(monsterNamesSorted) do
     })
 end
 
+-- Info section
+MonsterTab:CreateParagraph({
+    Title = "ℹ️ ESP Information",
+    Content = "Highlights monsters in the 'Living' folder\nDisplays: Name, Claim Status, HP, Distance\n⚔️ = Monster is attacking\n[YOU] = Claimed by you\n[PLAYERNAME] = Claimed by other\n[UNCLAIMED] = Available"
+})
+
 -- ===== CHARACTER HANDLING =====
 -- Handle character respawn
 player.CharacterAdded:Connect(function(character)
@@ -581,14 +635,19 @@ Rayfield:Notify({
     Duration = 4
 })
 
--- Initial scan untuk monster yang sudah ada di game
+-- Initial scan untuk monsters yang sudah ada di game
 task.spawn(function()
     task.wait(2)
-    print("Performing initial monster scan...")
-    for _, monsterName in ipairs(MONSTER_DATA) do
-        if MonsterToggle[monsterName] then
-            ScanMonster(monsterName)
+    print("[DarkCarbon ESP] Performing initial monster scan...")
+    if LIVING_FOLDER then
+        print("[DarkCarbon ESP] Found 'Living' folder, scanning...")
+        for _, monsterName in ipairs(MONSTER_DATA) do
+            if MonsterToggle[monsterName] then
+                ScanMonster(monsterName)
+            end
         end
+    else
+        warn("[DarkCarbon ESP] 'Living' folder NOT found!")
     end
 end)
 
