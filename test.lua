@@ -1,6 +1,6 @@
 -- ============================================================--
 -- DARKCARBON HUB + Ore ESP (Full Working) - Rayfield Version
--- Toggle → Menu dengan Tab (Home / Controls / Settings)
+-- Hanya Tab Settings + ESP System
 -- ============================================================--
 
 -- ===== Load Rayfield =====
@@ -12,6 +12,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
+local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
 local PlayerGui = player:WaitForChild("PlayerGui")
@@ -26,7 +27,6 @@ end
 local function tween(obj, props, t)
     TweenService:Create(obj, TweenInfo.new(t or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
 end
-local function clamp(v, a, b) return math.clamp(v, a, b) end
 
 -- ===== Ore Data =====
 local ORE_DATA = {
@@ -50,12 +50,16 @@ local ORE_COLORS = {
     DEFAULT = Color3.fromRGB(0, 200, 255)
 }
 
-local function GetOreColor(n) return ORE_COLORS[n] or ORE_COLORS.DEFAULT end
+local function GetOreColor(n) 
+    return ORE_COLORS[n] or ORE_COLORS.DEFAULT 
+end
 
 -- ===== ESP State =====
 local ESP_ByHitbox = {} -- [hitbox] = {box, billboard, label, oreName}
 local OreToggle = {}    -- per-ore ON/OFF
-for k, _ in pairs(ORE_DATA) do OreToggle[k] = false end
+for k, _ in pairs(ORE_DATA) do 
+    OreToggle[k] = false 
+end
 
 -- Folder rocks
 local ROCK_FOLDER_NAME = "Rocks"
@@ -119,7 +123,13 @@ local function CreateESP(hitbox)
     label.TextStrokeTransparency = 0.6
     label.Parent = billboard
 
-    ESP_ByHitbox[hitbox] = { box = box, billboard = billboard, label = label, oreName = oreName, hitbox = hitbox }
+    ESP_ByHitbox[hitbox] = { 
+        box = box, 
+        billboard = billboard, 
+        label = label, 
+        oreName = oreName, 
+        hitbox = hitbox 
+    }
 end
 
 local function RemoveESP(hitbox)
@@ -146,7 +156,9 @@ local function WatchFolder(folder)
     folder.DescendantAdded:Connect(function(obj)
         if obj:IsA("BasePart") and obj.Name == "Hitbox" then
             local oreName = obj.Parent and obj.Parent.Name
-            if OreToggle[oreName] then pcall(function() CreateESP(obj) end) end
+            if OreToggle[oreName] then 
+                pcall(function() CreateESP(obj) end) 
+            end
         end
     end)
     folder.DescendantRemoving:Connect(function(obj)
@@ -156,11 +168,18 @@ local function WatchFolder(folder)
     end)
 end
 
-if ROCK_FOLDER then WatchFolder(ROCK_FOLDER) end
+if ROCK_FOLDER then 
+    WatchFolder(ROCK_FOLDER) 
+end
+
 Workspace.DescendantAdded:Connect(function(obj)
     if obj.Name == ROCK_FOLDER_NAME and obj:IsA("Folder") then
         ROCK_FOLDER = obj
-        for ore, _ in pairs(OreToggle) do if OreToggle[ore] then ScanOre(ore) end end
+        for ore, _ in pairs(OreToggle) do 
+            if OreToggle[ore] then 
+                ScanOre(ore) 
+            end 
+        end
         WatchFolder(obj)
     end
 end)
@@ -168,15 +187,16 @@ end)
 -- ===== Throttled update =====
 local accumulator = 0
 local UPDATE_INTERVAL = 0.25
-RunService.Heartbeat:Connect(function(dt)
-    accumulator = accumulator + dt
-    if accumulator < UPDATE_INTERVAL then return end
-    accumulator = 0
+local function UpdateESP()
     local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     for hitbox, data in pairs(ESP_ByHitbox) do
-        if not hitbox or not hitbox.Parent then RemoveESP(hitbox) else
+        if not hitbox or not hitbox.Parent then 
+            RemoveESP(hitbox) 
+        else
             local visible = OreToggle[data.oreName]
-            if not visible then RemoveESP(hitbox) else
+            if not visible then 
+                RemoveESP(hitbox) 
+            else
                 local hp = GetOreHP(hitbox)
                 local dist = rootPart and math.floor((rootPart.Position - hitbox.Position).Magnitude) or 0
                 if data.label then
@@ -188,14 +208,21 @@ RunService.Heartbeat:Connect(function(dt)
             end
         end
     end
+end
+
+RunService.Heartbeat:Connect(function(dt)
+    accumulator = accumulator + dt
+    if accumulator < UPDATE_INTERVAL then return end
+    accumulator = 0
+    UpdateESP()
 end)
 
--- ===== Initialize Rayfield Window =====
+-- ===== GUI SETUP (Mengikuti contoh referensi) =====
 local Window = Rayfield:CreateWindow({
-    Name = "DarkCarbon — Dev UI",
-    LoadingTitle = "Loading DarkCarbon Hub...",
-    LoadingSubtitle = "by Developer",
-    ConfigurationSaving = {
+    Name = "DarkCarbon Hub — Ore ESP",
+    LoadingTitle = "Loading DarkCarbon ESP...",
+    LoadingSubtitle = "By Developer",
+    ConfigurationSaving = { 
         Enabled = false,
     },
     Discord = {
@@ -204,97 +231,82 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false,
 })
 
--- ===== Create Tabs =====
-local HomeTab = Window:CreateTab("Home", nil) -- Icon bisa ditambahkan jika ada
-local ControlsTab = Window:CreateTab("Controls", nil)
-local SettingsTab = Window:CreateTab("Settings", nil)
+-- ===== SETTINGS TAB =====
+local SettingsTab = Window:CreateTab("⚙️ Settings")
 
--- ===== Home Tab Content =====
-local HomeSection = HomeTab:CreateSection("Welcome")
-HomeTab:CreateLabel("DarkCarbon Hub - Ore ESP System")
-HomeTab:CreateLabel("Version: 1.0.0")
-HomeTab:CreateLabel("Developer: DarkCarbon")
+-- ESP STATUS LABEL
+local ActiveESPCount = 0
+local ESPStatusLabel = SettingsTab:CreateLabel("📊 Active ESP: 0")
 
-HomeTab:CreateParagraph({
-    Title = "Features",
-    Content = "• Ore ESP with health and distance display\n• Color-coded ore types\n• Real-time ore scanning\n• Toggle individual ore types\n• Auto-update ESP when new rocks spawn"
-})
-
-local StatsSection = HomeTab:CreateSection("Statistics")
-local OreCountLabel = HomeTab:CreateLabel("Total Ore Types: " .. #ORE_DATA)
-local ActiveESPCount = HomeTab:CreateLabel("Active ESP: 0")
-
--- Update active ESP count
 local function UpdateESPCount()
     local count = 0
     for _, state in pairs(OreToggle) do
         if state then count = count + 1 end
     end
-    ActiveESPCount:Set("Active ESP: " .. count)
+    ActiveESPCount = count
+    ESPStatusLabel:Set("📊 Active ESP: " .. count)
 end
 
--- ===== Controls Tab Content =====
-local ESPControls = ControlsTab:CreateSection("ESP Controls")
+-- ESP CONTROLS SECTION
+SettingsTab:CreateSection("🎯 ESP Controls")
 
--- Toggle All ESP button
-ControlsTab:CreateButton({
-    Name = "Toggle All ESP ON",
-    Callback = function()
-        for oreName, _ in pairs(OreToggle) do
-            OreToggle[oreName] = true
-            ScanOre(oreName)
-        end
-        UpdateESPCount()
-        Rayfield:Notify({
-            Title = "ESP",
-            Content = "All ESP toggled ON",
-            Duration = 2,
-        })
-    end,
-})
-
-ControlsTab:CreateButton({
-    Name = "Toggle All ESP OFF",
-    Callback = function()
-        for oreName, _ in pairs(OreToggle) do
-            OreToggle[oreName] = false
-            for hitbox, data in pairs(ESP_ByHitbox) do
-                if data.oreName == oreName then RemoveESP(hitbox) end
+-- Toggle All ESP ON
+SettingsTab:CreateToggle({
+    Name = "✅ Enable All ESP",
+    CurrentValue = false,
+    Callback = function(val)
+        if val then
+            for oreName, _ in pairs(OreToggle) do
+                OreToggle[oreName] = true
+                ScanOre(oreName)
             end
+            Rayfield:Notify({
+                Title = "ESP",
+                Content = "All ESP toggled ON",
+                Duration = 3
+            })
+        else
+            for oreName, _ in pairs(OreToggle) do
+                OreToggle[oreName] = false
+                for hitbox, data in pairs(ESP_ByHitbox) do
+                    if data.oreName == oreName then 
+                        RemoveESP(hitbox) 
+                    end
+                end
+            end
+            Rayfield:Notify({
+                Title = "ESP",
+                Content = "All ESP toggled OFF",
+                Duration = 3
+            })
         end
         UpdateESPCount()
-        Rayfield:Notify({
-            Title = "ESP",
-            Content = "All ESP toggled OFF",
-            Duration = 2,
-        })
-    end,
+    end
 })
 
-local RefreshButton = ControlsTab:CreateButton({
-    Name = "Refresh ESP",
+-- Refresh ESP
+SettingsTab:CreateButton({
+    Name = "🔄 Refresh ESP",
     Callback = function()
-        -- Clear all ESP
         for hitbox, _ in pairs(ESP_ByHitbox) do
             RemoveESP(hitbox)
         end
-        
-        -- Rescan for active ores
         for oreName, state in pairs(OreToggle) do
-            if state then ScanOre(oreName) end
+            if state then 
+                ScanOre(oreName) 
+            end
         end
-        
         Rayfield:Notify({
             Title = "ESP",
             Content = "ESP refreshed",
-            Duration = 1,
+            Duration = 2
         })
-    end,
+    end
 })
 
-local UtilitySection = ControlsTab:CreateSection("Utility")
-ControlsTab:CreateButton({
-    Name = "Clear All ESP",
+-- Clear All ESP
+SettingsTab:CreateButton({
+    Name = "🗑️ Clear All ESP",
     Callback = function()
         for hitbox, _ in pairs(ESP_ByHitbox) do
             RemoveESP(hitbox)
@@ -302,127 +314,128 @@ ControlsTab:CreateButton({
         Rayfield:Notify({
             Title = "ESP",
             Content = "All ESP cleared",
-            Duration = 2,
+            Duration = 2
         })
-    end,
+    end
 })
 
--- ===== Settings Tab Content =====
-local ESPSettings = SettingsTab:CreateSection("ESP Settings")
+-- ORE SETTINGS SECTION
+SettingsTab:CreateSection("💎 Ore Settings")
 
--- Create toggle for each ore type
+-- Sort ore names
 local oreNames = {}
-for n, _ in pairs(ORE_DATA) do table.insert(oreNames, n) end
+for n, _ in pairs(ORE_DATA) do 
+    table.insert(oreNames, n) 
+end
 table.sort(oreNames)
 
-local toggleElements = {} -- Simpan toggle untuk nanti update warna
-
+-- Create toggle for each ore
+local OreToggles = {}
 for _, oreName in ipairs(oreNames) do
     local toggle = SettingsTab:CreateToggle({
-        Name = oreName .. " (" .. tostring(ORE_DATA[oreName] or 0) .. ")",
+        Name = oreName .. " (" .. tostring(ORE_DATA[oreName] or 0) .. " HP)",
         CurrentValue = false,
-        Flag = "Toggle_" .. oreName, -- Flag untuk identification
-        Callback = function(value)
-            OreToggle[oreName] = value
-            if value then
+        Callback = function(val)
+            OreToggle[oreName] = val
+            if val then
                 ScanOre(oreName)
-                -- Set warna berdasarkan ore
-                local oreColor = GetOreColor(oreName)
-                -- Tidak ada method Set() di Rayfield untuk toggle, kita hanya update state
+                Rayfield:Notify({
+                    Title = "ESP Added",
+                    Content = oreName .. " ESP enabled",
+                    Duration = 2
+                })
             else
                 for hitbox, data in pairs(ESP_ByHitbox) do
-                    if data.oreName == oreName then RemoveESP(hitbox) end
+                    if data.oreName == oreName then 
+                        RemoveESP(hitbox) 
+                    end
                 end
+                Rayfield:Notify({
+                    Title = "ESP Removed",
+                    Content = oreName .. " ESP disabled",
+                    Duration = 2
+                })
             end
             UpdateESPCount()
-        end,
+        end
     })
-    
-    toggleElements[oreName] = toggle
+    OreToggles[oreName] = toggle
 end
 
-local UISettings = SettingsTab:CreateSection("UI Settings")
+-- UI SETTINGS SECTION
+SettingsTab:CreateSection("⚡ UI Settings")
+
+-- Destroy GUI Button
 SettingsTab:CreateButton({
-    Name = "Destroy GUI",
+    Name = "❌ Close GUI",
     Callback = function()
         Rayfield:Destroy()
         if BillboardGuiContainer then
             BillboardGuiContainer:Destroy()
         end
-    end,
+        -- Clear all ESP
+        for hitbox, _ in pairs(ESP_ByHitbox) do
+            RemoveESP(hitbox)
+        end
+    end
 })
 
+-- Reset All Settings
 SettingsTab:CreateButton({
-    Name = "Reset All Settings",
+    Name = "🔄 Reset All Settings",
     Callback = function()
         for oreName, _ in pairs(OreToggle) do
             OreToggle[oreName] = false
             for hitbox, data in pairs(ESP_ByHitbox) do
-                if data.oreName == oreName then RemoveESP(hitbox) end
+                if data.oreName == oreName then 
+                    RemoveESP(hitbox) 
+                end
             end
         end
         UpdateESPCount()
         Rayfield:Notify({
             Title = "Settings",
             Content = "All settings reset",
-            Duration = 2,
+            Duration = 3
         })
-    end,
+    end
 })
 
--- ===== Additional Features =====
--- Auto-update ESP count periodically
-local updateCountConnection = RunService.Heartbeat:Connect(function(dt)
-    -- Update setiap 1 detik
-    accumulator = accumulator + dt
-    if accumulator > 1 then
-        accumulator = 0
-        UpdateESPCount()
-    end
-end)
-
--- Cleanup when GUI is destroyed
-local windowDestroyed = false
-Rayfield:OnDestroy(function()
-    windowDestroyed = true
-    if updateCountConnection then
-        updateCountConnection:Disconnect()
-    end
-    if BillboardGuiContainer then
-        BillboardGuiContainer:Destroy()
-    end
-    
-    -- Clear all ESP
-    for hitbox, _ in pairs(ESP_ByHitbox) do
-        RemoveESP(hitbox)
-    end
-end)
-
--- Initial notification
-Rayfield:Notify({
-    Title = "DarkCarbon Hub",
-    Content = "Successfully loaded! Check Settings tab for ESP toggles.",
-    Duration = 5,
-})
-
--- ===== Character Handling =====
--- Pastikan ESP tetap berjalan saat karakter respawn
+-- ===== CHARACTER HANDLING =====
+-- Handle character respawn
 player.CharacterAdded:Connect(function(character)
     character:WaitForChild("HumanoidRootPart", 10)
-    -- Rescan semua ore yang aktif
+    task.wait(1)
+    -- Rescan all active ores
     for oreName, state in pairs(OreToggle) do
         if state then
-            task.wait(0.5)
             ScanOre(oreName)
         end
     end
 end)
 
-print("DarkCarbon UI + OreESP loaded with Rayfield — Use Settings tab to toggle ESP")
+-- ===== INITIALIZATION =====
+-- Initial notification
+Rayfield:Notify({
+    Title = "DarkCarbon Hub Loaded",
+    Content = "Ore ESP System Ready!\nUse Settings tab to toggle ESP",
+    Duration = 5
+})
 
--- Fungsi untuk debug: cek apakah window dan tab berjalan
-task.wait(1)
-print("Rayfield Window initialized:", Window ~= nil)
-print("Home Tab created:", HomeTab ~= nil)
-print("Controls Tab created:", ControlsTab ~= nil)
-print("Settings Tab created:", SettingsTab ~= nil)
+-- Initial ESP count update
+UpdateESPCount()
+
+-- Auto-update ESP count every 5 seconds
+task.spawn(function()
+    while true do
+        task.wait(5)
+        UpdateESPCount()
+    end
+end)
+
+print("=====================================")
+print("DarkCarbon Ore ESP System Loaded")
+print("Total Ore Types: " .. #oreNames)
+print("ESP System: Active")
+print("GUI: Rayfield UI Ready")
+print("=====================================")
