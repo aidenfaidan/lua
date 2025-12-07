@@ -1,6 +1,6 @@
 -- ============================================================--
--- DARKCARBON HUB + Ore ESP + Monster ESP - Rayfield Version
--- Tab: Ore ESP dan Monster ESP (Fixed based on reference)
+-- DARKCARBON HUB + Ore ESP (Full Working) - Rayfield Version
+-- Hanya Tab Settings + ESP System dengan Highlight
 -- ============================================================--
 
 -- ===== Load Rayfield =====
@@ -81,33 +81,33 @@ local function GetMonsterColor(n)
 end
 
 -- ===== ESP State =====
--- Ore ESP
 local ESP_ByHitbox = {} -- [hitbox] = {highlight, billboard, label, oreName}
 local OreToggle = {}    -- per-ore ON/OFF
 for k, _ in pairs(ORE_DATA) do 
     OreToggle[k] = false 
 end
 
--- Monster ESP
-local MonsterESP_ByModel = {} -- [model] = {highlight, billboard, label, monsterName}
-local MonsterToggle = {}      -- per-monster ON/OFF
-for _, monsterName in ipairs(MONSTER_DATA) do
-    MonsterToggle[monsterName] = false
+local Monster_ByModel = {} -- [model] = {highlight, billboard, label, monsterName}
+local MonsterToggle = {}    -- per-monster ON/OFF
+for _, name in ipairs(MONSTER_DATA) do
+    MonsterToggle[name] = false
 end
 
 -- Folder rocks
 local ROCK_FOLDER_NAME = "Rocks"
 local ROCK_FOLDER = Workspace:FindFirstChild(ROCK_FOLDER_NAME)
 
--- Find the Living folder (CRITICAL for Monster ESP)
-local LIVING_FOLDER = workspace:WaitForChild("Living") or workspace:FindFirstChild("Living")
+-- Folder monsters (asumsi ada folder Monsters di Workspace)
+local MONSTER_FOLDER_NAME = "Monsters"
+local MONSTER_FOLDER = Workspace:FindFirstChild(MONSTER_FOLDER_NAME)
 
--- Billboard containers
-local OreBillboardContainer = Instance.new("ScreenGui")
-OreBillboardContainer.Name = "OreESP_Billboards"
-OreBillboardContainer.ResetOnSpawn = false
-OreBillboardContainer.Parent = PlayerGui
+-- Billboard container
+local BillboardGuiContainer = Instance.new("ScreenGui")
+BillboardGuiContainer.Name = "OreESP_Billboards"
+BillboardGuiContainer.ResetOnSpawn = false
+BillboardGuiContainer.Parent = PlayerGui
 
+-- Billboard container monster
 local MonsterBillboardContainer = Instance.new("ScreenGui")
 MonsterBillboardContainer.Name = "MonsterESP_Billboards"
 MonsterBillboardContainer.ResetOnSpawn = false
@@ -130,20 +130,42 @@ local function GetOreHP(hitbox)
     return ORE_DATA[model.Name] or 0
 end
 
+local function GetMonsterHP(model)
+    if not model or not model:IsA("Model") then return 0 end
+    local a = model:GetAttribute("Health")
+    if type(a) == "number" then return a end
+    for _, v in ipairs(model:GetDescendants()) do
+        if v:IsA("NumberValue") or v:IsA("IntValue") then
+            local n = string.lower(v.Name)
+            if n == "hp" or n == "health" then return v.Value end
+        end
+    end
+    return 0
+end
+
 local function GetActualOreModel(hitbox)
     local model = hitbox.Parent
     if model and model:IsA("Model") then
         return model
     end
-    local parent = model and model.Parent
+    local parent = model.Parent
     if parent and parent:IsA("Model") then
         return parent
     end
     return model or hitbox
 end
 
+local function GetMonsterHitbox(model)
+    -- Cari bagian yang cocok untuk dijadikan adornee billboard
+    local hitbox = model:FindFirstChild("Hitbox") or 
+                   model:FindFirstChild("Head") or 
+                   model:FindFirstChild("HumanoidRootPart") or 
+                   model.PrimaryPart
+    return hitbox or model
+end
+
 -- ===== ORE ESP Functions =====
-local function CreateOreESP(hitbox)
+local function CreateESP(hitbox)
     if not hitbox or not hitbox:IsA("BasePart") then return end
     if ESP_ByHitbox[hitbox] then return end
     if not hitbox.Parent then return end
@@ -168,7 +190,7 @@ local function CreateOreESP(hitbox)
     billboard.Adornee = hitbox
     billboard.AlwaysOnTop = true
     billboard.Size = UDim2.new(0, 200, 0, 28)
-    billboard.Parent = OreBillboardContainer
+    billboard.Parent = BillboardGuiContainer
     
     local label = Instance.new("TextLabel")
     label.Name = "OreLabel"
@@ -191,7 +213,7 @@ local function CreateOreESP(hitbox)
     }
 end
 
-local function RemoveOreESP(hitbox)
+local function RemoveESP(hitbox)
     local data = ESP_ByHitbox[hitbox]
     if not data then return end
     pcall(function()
@@ -209,87 +231,36 @@ local function ScanOre(oreName)
     if not ROCK_FOLDER then return end
     for _, desc in ipairs(ROCK_FOLDER:GetDescendants()) do
         if desc:IsA("BasePart") and desc.Name == "Hitbox" and desc.Parent.Name == oreName then
-            pcall(function() CreateOreESP(desc) end)
+            pcall(function() CreateESP(desc) end)
         end
     end
 end
 
--- ===== MONSTER ESP Functions (FIXED based on reference) =====
-local function GetClaimantName(monsterModel)
-    local status = monsterModel:FindFirstChild("Status")
-    if not status then return nil end
-    
-    local damageDone = status:FindFirstChild("DamageDone")
-    if not damageDone or not damageDone.Value then return nil end
-    
-    local claimant = damageDone.Value
-    if claimant:IsA("Player") then
-        return claimant.Name
-    elseif claimant:IsA("Model") then
-        return claimant.Name
-    elseif type(claimant) == "string" then
-        return claimant
-    end
-    return nil
-end
-
-local function IsMonsterAttacking(monsterModel)
-    local status = monsterModel:FindFirstChild("Status")
-    if not status then return false end
-    
-    local attacking = status:FindFirstChild("Attacking")
-    if not attacking then return false end
-    
-    local attackValue = attacking.Value
-    if type(attackValue) == "boolean" then 
-        return attackValue == true
-    elseif type(attackValue) == "number" then 
-        return attackValue > 0
-    elseif type(attackValue) == "string" then 
-        return attackValue:lower() == "true" or attackValue == "1"
-    end
-    return false
-end
-
-local function GetMonsterHP(monsterModel)
-    local humanoid = monsterModel:FindFirstChildWhichIsA("Humanoid")
-    if humanoid then
-        return math.floor(humanoid.Health)
-    end
-    return 0
-end
-
-local function CreateMonsterESP(monsterModel)
-    if not monsterModel or not monsterModel:IsA("Model") then return end
-    if MonsterESP_ByModel[monsterModel] then return end
-    
-    local monsterName = monsterModel.Name
+-- ===== MONSTER ESP Functions =====
+local function CreateMonsterESP(model)
+    if not model or not model:IsA("Model") then return end
+    if Monster_ByModel[model] then return end
+    local monsterName = model.Name
     if not MonsterToggle[monsterName] then return end
     local color = GetMonsterColor(monsterName)
     
-    -- Find the best part to attach the ESP to
-    local rootPart = monsterModel:FindFirstChild("HumanoidRootPart") or 
-                     monsterModel.PrimaryPart or 
-                     monsterModel:FindFirstChildWhichIsA("BasePart")
-    if not rootPart then return end
+    local hitbox = GetMonsterHitbox(model)
     
-    -- 1. Create HIGHLIGHT
     local highlight = Instance.new("Highlight")
     highlight.Name = "MonsterHighlight"
-    highlight.Adornee = monsterModel
+    highlight.Adornee = model
     highlight.FillColor = color
     highlight.OutlineColor = color
-    highlight.FillTransparency = 0.6
-    highlight.OutlineTransparency = 0.2
+    highlight.FillTransparency = 0.7
+    highlight.OutlineTransparency = 0.3
     highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    highlight.Parent = monsterModel
+    highlight.Parent = model
     
-    -- 2. Create BILLBOARD for info
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "MonsterBillboard"
-    billboard.Adornee = rootPart
+    billboard.Adornee = hitbox
     billboard.AlwaysOnTop = true
-    billboard.Size = UDim2.new(0, 250, 0, 32)
+    billboard.Size = UDim2.new(0, 200, 0, 28)
     billboard.Parent = MonsterBillboardContainer
     
     local label = Instance.new("TextLabel")
@@ -299,44 +270,22 @@ local function CreateMonsterESP(monsterModel)
     label.Font = Enum.Font.GothamBold
     label.TextScaled = true
     label.TextColor3 = color
-    label.TextStrokeTransparency = 0.4
+    label.TextStrokeTransparency = 0.5
     label.TextStrokeColor3 = Color3.new(0, 0, 0)
     label.Parent = billboard
 
-    -- Get initial info for the label
-    local claimant = GetClaimantName(monsterModel)
-    local hp = GetMonsterHP(monsterModel)
-    local isAttacking = IsMonsterAttacking(monsterModel)
-    
-    local statusText = ""
-    if claimant then
-        statusText = claimant == player.Name and "[YOU]" or "[" .. claimant .. "]"
-    else
-        statusText = "[UNCLAIMED]"
-    end
-    
-    if isAttacking then
-        statusText = statusText .. " ⚔️"
-    end
-    
-    MonsterESP_ByModel[monsterModel] = { 
+    Monster_ByModel[model] = { 
         highlight = highlight, 
         billboard = billboard, 
         label = label, 
-        monsterName = monsterName, 
-        model = monsterModel,
-        rootPart = rootPart,
-        claimant = claimant
+        monsterName = monsterName,
+        model = model,
+        hitbox = hitbox
     }
-    
-    -- Set the initial text
-    if label then
-        label.Text = string.format("%s %s | HP: %d", monsterName, statusText, hp)
-    end
 end
 
-local function RemoveMonsterESP(monsterModel)
-    local data = MonsterESP_ByModel[monsterModel]
+local function RemoveMonsterESP(model)
+    local data = Monster_ByModel[model]
     if not data then return end
     pcall(function()
         if data.highlight and data.highlight.Parent then 
@@ -346,70 +295,66 @@ local function RemoveMonsterESP(monsterModel)
             data.billboard:Destroy() 
         end
     end)
-    MonsterESP_ByModel[monsterModel] = nil
+    Monster_ByModel[model] = nil
 end
 
 local function ScanMonster(monsterName)
-    if not LIVING_FOLDER then 
-        warn("[Monster ESP] 'Living' folder not found in workspace.")
-        return 
+    if not MONSTER_FOLDER then 
+        -- Jika tidak ada folder Monsters, coba cari di seluruh Workspace
+        for _, model in ipairs(Workspace:GetDescendants()) do
+            if model:IsA("Model") and model.Name == monsterName then
+                pcall(function() CreateMonsterESP(model) end)
+            end
+        end
+        return
     end
     
-    for _, entity in ipairs(LIVING_FOLDER:GetChildren()) do
-        if entity:IsA("Model") and entity.Name == monsterName then
-            if entity:FindFirstChild("Status") then
-                pcall(function() 
-                    CreateMonsterESP(entity) 
-                end)
-            end
+    for _, desc in ipairs(MONSTER_FOLDER:GetDescendants()) do
+        if desc:IsA("Model") and desc.Name == monsterName then
+            pcall(function() CreateMonsterESP(desc) end)
         end
     end
 end
 
--- ===== Folder Watchers =====
-local function WatchOreFolder(folder)
+-- ===== Folder Watching =====
+local function WatchFolder(folder)
     if not folder then return end
     folder.DescendantAdded:Connect(function(obj)
         if obj:IsA("BasePart") and obj.Name == "Hitbox" then
             local oreName = obj.Parent and obj.Parent.Name
             if OreToggle[oreName] then 
-                pcall(function() CreateOreESP(obj) end) 
+                pcall(function() CreateESP(obj) end) 
             end
         end
     end)
     folder.DescendantRemoving:Connect(function(obj)
         if obj:IsA("BasePart") and ESP_ByHitbox[obj] then
-            pcall(function() RemoveOreESP(obj) end)
+            pcall(function() RemoveESP(obj) end)
         end
     end)
 end
 
-local function WatchMonsters()
-    if not LIVING_FOLDER then return end
-    
-    -- Monitor for new monsters that appear
-    LIVING_FOLDER.ChildAdded:Connect(function(obj)
+local function WatchMonsterFolder(folder)
+    if not folder then return end
+    folder.DescendantAdded:Connect(function(obj)
         if obj:IsA("Model") and MonsterToggle[obj.Name] then
-            task.wait(0.1)
-            if obj:FindFirstChild("Status") then
-                pcall(function() CreateMonsterESP(obj) end)
-            end
+            pcall(function() CreateMonsterESP(obj) end)
         end
     end)
-    
-    LIVING_FOLDER.ChildRemoved:Connect(function(obj)
-        if obj:IsA("Model") and MonsterESP_ByModel[obj] then
+    folder.DescendantRemoving:Connect(function(obj)
+        if obj:IsA("Model") and Monster_ByModel[obj] then
             pcall(function() RemoveMonsterESP(obj) end)
         end
     end)
 end
 
 if ROCK_FOLDER then 
-    WatchOreFolder(ROCK_FOLDER) 
+    WatchFolder(ROCK_FOLDER) 
 end
 
--- Setup monster watcher
-WatchMonsters()
+if MONSTER_FOLDER then
+    WatchMonsterFolder(MONSTER_FOLDER)
+end
 
 Workspace.DescendantAdded:Connect(function(obj)
     if obj.Name == ROCK_FOLDER_NAME and obj:IsA("Folder") then
@@ -419,27 +364,34 @@ Workspace.DescendantAdded:Connect(function(obj)
                 ScanOre(ore) 
             end 
         end
-        WatchOreFolder(obj)
+        WatchFolder(obj)
+    elseif obj.Name == MONSTER_FOLDER_NAME and obj:IsA("Folder") then
+        MONSTER_FOLDER = obj
+        for monster, _ in pairs(MonsterToggle) do 
+            if MonsterToggle[monster] then 
+                ScanMonster(monster) 
+            end 
+        end
+        WatchMonsterFolder(obj)
     end
 end)
 
 -- ===== Throttled update =====
 local accumulator = 0
 local UPDATE_INTERVAL = 0.25
+
 local function UpdateESP()
-    local playerRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-    
-    -- Update Ore ESP
+    local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     for hitbox, data in pairs(ESP_ByHitbox) do
         if not hitbox or not hitbox.Parent then 
-            RemoveOreESP(hitbox) 
+            RemoveESP(hitbox) 
         else
             local visible = OreToggle[data.oreName]
             if not visible then 
-                RemoveOreESP(hitbox) 
+                RemoveESP(hitbox) 
             else
                 local hp = GetOreHP(hitbox)
-                local dist = playerRoot and math.floor((playerRoot.Position - hitbox.Position).Magnitude) or 0
+                local dist = rootPart and math.floor((rootPart.Position - hitbox.Position).Magnitude) or 0
                 if data.label then
                     data.label.Text = string.format("%s | HP: %d | %dm", data.oreName, hp, dist)
                 end
@@ -451,9 +403,11 @@ local function UpdateESP()
             end
         end
     end
-    
-    -- Update Monster ESP
-    for model, data in pairs(MonsterESP_ByModel) do
+end
+
+local function UpdateMonsterESP()
+    local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    for model, data in pairs(Monster_ByModel) do
         if not model or not model.Parent then 
             RemoveMonsterESP(model) 
         else
@@ -462,35 +416,12 @@ local function UpdateESP()
                 RemoveMonsterESP(model) 
             else
                 local hp = GetMonsterHP(model)
-                local dist = playerRoot and data.rootPart and math.floor((playerRoot.Position - data.rootPart.Position).Magnitude) or 0
-                local claimant = GetClaimantName(model)
-                local isAttacking = IsMonsterAttacking(model)
-                
-                local statusText = ""
-                if claimant then
-                    statusText = claimant == player.Name and "[YOU]" or "[" .. claimant .. "]"
-                else
-                    statusText = "[UNCLAIMED]"
-                end
-                
-                if isAttacking then
-                    statusText = statusText .. " ⚔️"
-                end
-                
+                local dist = rootPart and math.floor((rootPart.Position - data.hitbox.Position).Magnitude) or 0
                 if data.label then
-                    data.label.Text = string.format("%s %s | HP: %d | %dm", 
-                        data.monsterName, statusText, hp, dist)
+                    data.label.Text = string.format("%s | HP: %d | %dm", data.monsterName, hp, dist)
                 end
-                
-                -- Update billboard adornee if rootPart changed
-                if data.rootPart and data.rootPart.Parent ~= model then
-                    local newRoot = model:FindFirstChild("HumanoidRootPart") or 
-                                   model.PrimaryPart or 
-                                   model:FindFirstChildWhichIsA("BasePart")
-                    if newRoot then
-                        data.billboard.Adornee = newRoot
-                        data.rootPart = newRoot
-                    end
+                if data.highlight and data.highlight.Adornee ~= model then
+                    data.highlight.Adornee = model
                 end
             end
         end
@@ -502,11 +433,12 @@ RunService.Heartbeat:Connect(function(dt)
     if accumulator < UPDATE_INTERVAL then return end
     accumulator = 0
     UpdateESP()
+    UpdateMonsterESP()
 end)
 
 -- ===== GUI SETUP =====
 local Window = Rayfield:CreateWindow({
-    Name = "DarkCarbon Hub — ESP System",
+    Name = "DarkCarbon Hub — Ore & Monster ESP",
     LoadingTitle = "Loading DarkCarbon ESP...",
     LoadingSubtitle = "By Developer",
     ConfigurationSaving = { 
@@ -519,20 +451,18 @@ local Window = Rayfield:CreateWindow({
 })
 
 -- ===== ORE ESP TAB =====
-local OreTab = Window:CreateTab("💎 Ore ESP")
+local SettingsTab = Window:CreateTab("💎 Ore ESP")
 
-OreTab:CreateSection("Ore ESP Settings")
+SettingsTab:CreateSection("ESP Settings")
 
--- Sort ore names
 local oreNames = {}
 for n, _ in pairs(ORE_DATA) do 
     table.insert(oreNames, n) 
 end
 table.sort(oreNames)
 
--- Create toggle for each ore
 for _, oreName in ipairs(oreNames) do
-    OreTab:CreateToggle({
+    SettingsTab:CreateToggle({
         Name = oreName .. " (" .. tostring(ORE_DATA[oreName] or 0) .. " HP)",
         CurrentValue = false,
         Callback = function(val)
@@ -540,18 +470,18 @@ for _, oreName in ipairs(oreNames) do
             if val then
                 ScanOre(oreName)
                 Rayfield:Notify({
-                    Title = "Ore ESP Added",
+                    Title = "ESP Added",
                     Content = oreName .. " ESP enabled",
                     Duration = 2
                 })
             else
                 for hitbox, data in pairs(ESP_ByHitbox) do
                     if data.oreName == oreName then 
-                        RemoveOreESP(hitbox) 
+                        RemoveESP(hitbox) 
                     end
                 end
                 Rayfield:Notify({
-                    Title = "Ore ESP Removed",
+                    Title = "ESP Removed",
                     Content = oreName .. " ESP disabled",
                     Duration = 2
                 })
@@ -561,19 +491,17 @@ for _, oreName in ipairs(oreNames) do
 end
 
 -- ===== MONSTER ESP TAB =====
-local MonsterTab = Window:CreateTab("👹 Monster ESP")
+local MonsterTab = Window:CreateTab("👹 ESP Monster")
 
 MonsterTab:CreateSection("Monster ESP Settings")
 
--- Sort monster names
-local monsterNamesSorted = {}
-for _, monsterName in ipairs(MONSTER_DATA) do
-    table.insert(monsterNamesSorted, monsterName)
+local monsterNames = {}
+for _, name in ipairs(MONSTER_DATA) do
+    table.insert(monsterNames, name)
 end
-table.sort(monsterNamesSorted)
+table.sort(monsterNames)
 
--- Create toggle for each monster
-for _, monsterName in ipairs(monsterNamesSorted) do
+for _, monsterName in ipairs(monsterNames) do
     MonsterTab:CreateToggle({
         Name = monsterName,
         CurrentValue = false,
@@ -587,9 +515,9 @@ for _, monsterName in ipairs(monsterNamesSorted) do
                     Duration = 2
                 })
             else
-                for model, data in pairs(MonsterESP_ByModel) do
-                    if data.monsterName == monsterName then 
-                        RemoveMonsterESP(model) 
+                for model, data in pairs(Monster_ByModel) do
+                    if data.monsterName == monsterName then
+                        RemoveMonsterESP(model)
                     end
                 end
                 Rayfield:Notify({
@@ -602,24 +530,21 @@ for _, monsterName in ipairs(monsterNamesSorted) do
     })
 end
 
--- Info section
-MonsterTab:CreateParagraph({
-    Title = "ℹ️ ESP Information",
-    Content = "Highlights monsters in the 'Living' folder\nDisplays: Name, Claim Status, HP, Distance\n⚔️ = Monster is attacking\n[YOU] = Claimed by you\n[PLAYERNAME] = Claimed by other\n[UNCLAIMED] = Available"
-})
+-- Informasi jika folder monster tidak ditemukan
+if not MONSTER_FOLDER then
+    MonsterTab:CreateLabel("⚠️ Folder 'Monsters' tidak ditemukan di Workspace")
+    MonsterTab:CreateLabel("ESP akan mencari monster di seluruh Workspace")
+end
 
 -- ===== CHARACTER HANDLING =====
--- Handle character respawn
 player.CharacterAdded:Connect(function(character)
     character:WaitForChild("HumanoidRootPart", 10)
     task.wait(1)
-    -- Rescan all active ores
     for oreName, state in pairs(OreToggle) do
         if state then
             ScanOre(oreName)
         end
     end
-    -- Rescan all active monsters
     for monsterName, state in pairs(MonsterToggle) do
         if state then
             ScanMonster(monsterName)
@@ -628,32 +553,15 @@ player.CharacterAdded:Connect(function(character)
 end)
 
 -- ===== INITIALIZATION =====
--- Initial notification
 Rayfield:Notify({
     Title = "DarkCarbon Hub Loaded",
-    Content = "Ore ESP + Monster ESP System Ready!",
-    Duration = 4
+    Content = "Ore & Monster ESP System Ready!",
+    Duration = 3
 })
-
--- Initial scan untuk monsters yang sudah ada di game
-task.spawn(function()
-    task.wait(2)
-    print("[DarkCarbon ESP] Performing initial monster scan...")
-    if LIVING_FOLDER then
-        print("[DarkCarbon ESP] Found 'Living' folder, scanning...")
-        for _, monsterName in ipairs(MONSTER_DATA) do
-            if MonsterToggle[monsterName] then
-                ScanMonster(monsterName)
-            end
-        end
-    else
-        warn("[DarkCarbon ESP] 'Living' folder NOT found!")
-    end
-end)
 
 print("=====================================")
 print("DarkCarbon ESP System Loaded")
 print("Total Ore Types: " .. #oreNames)
-print("Total Monster Types: " .. #MONSTER_DATA)
+print("Total Monster Types: " .. #monsterNames)
 print("ESP Type: Highlight (Follows Object Shape)")
 print("=====================================")
