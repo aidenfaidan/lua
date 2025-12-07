@@ -1,5 +1,5 @@
 -- ============================================================--
--- DARKCARBON HUB + Ore ESP (Full Working) - Rayfield Version
+-- DARKCARBON HUB + Ore & Monster ESP (Full Working) - Rayfield Version
 -- Hanya Tab Settings + ESP System dengan Highlight
 -- ============================================================--
 
@@ -36,8 +36,8 @@ local ORE_COLORS = {
     DEFAULT = Color3.fromRGB(0, 200, 255)
 }
 
--- ===== Monster Data =====
-local MONSTER_DATA = {
+-- ===== Monster Data (Base Names) =====
+local MONSTER_BASE_NAMES = {
     "Bomber",
     "Skeleton Rogue", 
     "Axe Skeleton",
@@ -49,9 +49,9 @@ local MONSTER_DATA = {
     "Elite Zombie",
     "Brute Zombie",
     "Reaper",
-    "Blight Puromancer",
+    "Blight Pyromancer",  -- Updated from "Blight Puromancer"
     "Slime",
-    "Burning Slime"
+    "Blazing Slime"       -- Updated from "Burning Slime"
 }
 
 local MONSTER_COLORS = {
@@ -66,11 +66,14 @@ local MONSTER_COLORS = {
     ["Elite Zombie"] = Color3.fromRGB(0, 200, 0),
     ["Brute Zombie"] = Color3.fromRGB(0, 255, 0),
     ["Reaper"] = Color3.fromRGB(0, 0, 0),
-    ["Blight Puromancer"] = Color3.fromRGB(150, 0, 150),
+    ["Blight Pyromancer"] = Color3.fromRGB(150, 0, 150),
     ["Slime"] = Color3.fromRGB(0, 150, 255),
-    ["Burning Slime"] = Color3.fromRGB(255, 100, 0),
+    ["Blazing Slime"] = Color3.fromRGB(255, 100, 0),
     DEFAULT = Color3.fromRGB(255, 255, 255)
 }
+
+-- ===== Monster Name Matcher System =====
+local MonsterPatternCache = {} -- Cache untuk hasil matching
 
 local function GetOreColor(n) 
     return ORE_COLORS[n] or ORE_COLORS.DEFAULT 
@@ -80,6 +83,77 @@ local function GetMonsterColor(n)
     return MONSTER_COLORS[n] or MONSTER_COLORS.DEFAULT
 end
 
+-- Fungsi utama untuk mencocokkan nama monster dengan angka
+local function MatchMonsterName(fullName)
+    -- Skip jika adalah player (Berserker_Vek atau nama lain dengan underscore)
+    if fullName:find("_") then
+        return nil
+    end
+    
+    -- Cek cache dulu untuk performa
+    if MonsterPatternCache[fullName] then
+        return MonsterPatternCache[fullName]
+    end
+    
+    -- Pattern 1: Exact match dengan nama dasar (jika tidak ada angka)
+    for _, baseName in ipairs(MONSTER_BASE_NAMES) do
+        if fullName == baseName then
+            MonsterPatternCache[fullName] = baseName
+            return baseName
+        end
+    end
+    
+    -- Pattern 2: Nama dasar diikuti angka (tanpa spasi)
+    for _, baseName in ipairs(MONSTER_BASE_NAMES) do
+        local pattern = "^" .. baseName .. "%d+$"
+        if fullName:match(pattern) then
+            MonsterPatternCache[fullName] = baseName
+            return baseName
+        end
+    end
+    
+    -- Pattern 3: Nama dasar diikuti spasi dan angka
+    for _, baseName in ipairs(MONSTER_BASE_NAMES) do
+        local pattern = "^" .. baseName .. "%s+%d+$"
+        if fullName:match(pattern) then
+            MonsterPatternCache[fullName] = baseName
+            return baseName
+        end
+    end
+    
+    -- Pattern 4: Partial match (untuk kasus typo atau variasi kecil)
+    for _, baseName in ipairs(MONSTER_BASE_NAMES) do
+        -- Cek jika nama dimulai dengan baseName
+        if fullName:sub(1, #baseName) == baseName then
+            MonsterPatternCache[fullName] = baseName
+            return baseName
+        end
+    end
+    
+    -- Pattern 5: Fuzzy matching (jika ada perbedaan kecil)
+    for _, baseName in ipairs(MONSTER_BASE_NAMES) do
+        -- Hitung kemiripan string
+        local similarity = 0
+        local minLength = math.min(#baseName, #fullName)
+        
+        for i = 1, minLength do
+            if baseName:sub(i, i) == fullName:sub(i, i) then
+                similarity = similarity + 1
+            end
+        end
+        
+        local similarityRatio = similarity / math.max(#baseName, #fullName)
+        if similarityRatio > 0.8 then -- 80% kemiripan
+            MonsterPatternCache[fullName] = baseName
+            return baseName
+        end
+    end
+    
+    -- Tidak ditemukan
+    MonsterPatternCache[fullName] = nil
+    return nil
+end
+
 -- ===== ESP State =====
 local ESP_ByHitbox = {} -- [hitbox] = {highlight, billboard, label, oreName}
 local OreToggle = {}    -- per-ore ON/OFF
@@ -87,9 +161,9 @@ for k, _ in pairs(ORE_DATA) do
     OreToggle[k] = false 
 end
 
-local Monster_ByModel = {} -- [model] = {highlight, billboard, label, monsterName}
+local Monster_ByModel = {} -- [model] = {highlight, billboard, label, baseMonsterName}
 local MonsterToggle = {}    -- per-monster ON/OFF
-for _, name in ipairs(MONSTER_DATA) do
+for _, name in ipairs(MONSTER_BASE_NAMES) do
     MonsterToggle[name] = false
 end
 
@@ -97,7 +171,7 @@ end
 local ROCK_FOLDER_NAME = "Rocks"
 local ROCK_FOLDER = Workspace:FindFirstChild(ROCK_FOLDER_NAME)
 
--- Folder monsters - DIPERBARUI: Sekarang mencari di folder "Living"
+-- Folder monsters
 local MONSTER_FOLDER_NAME = "Living"
 local MONSTER_FOLDER = Workspace:FindFirstChild(MONSTER_FOLDER_NAME)
 
@@ -240,10 +314,14 @@ end
 local function CreateMonsterESP(model)
     if not model or not model:IsA("Model") then return end
     if Monster_ByModel[model] then return end
-    local monsterName = model.Name
-    if not MonsterToggle[monsterName] then return end
-    local color = GetMonsterColor(monsterName)
     
+    local monsterFullName = model.Name
+    local baseMonsterName = MatchMonsterName(monsterFullName)
+    
+    if not baseMonsterName then return end
+    if not MonsterToggle[baseMonsterName] then return end
+    
+    local color = GetMonsterColor(baseMonsterName)
     local hitbox = GetMonsterHitbox(model)
     
     local highlight = Instance.new("Highlight")
@@ -278,7 +356,8 @@ local function CreateMonsterESP(model)
         highlight = highlight, 
         billboard = billboard, 
         label = label, 
-        monsterName = monsterName,
+        baseMonsterName = baseMonsterName,
+        monsterFullName = monsterFullName,
         model = model,
         hitbox = hitbox
     }
@@ -298,12 +377,15 @@ local function RemoveMonsterESP(model)
     Monster_ByModel[model] = nil
 end
 
-local function ScanMonster(monsterName)
+local function ScanAllMonsters()
     if not MONSTER_FOLDER then 
-        -- Jika tidak ada folder Living, coba cari di seluruh Workspace
+        -- Jika tidak ada folder Living, cari di seluruh Workspace
         for _, model in ipairs(Workspace:GetDescendants()) do
-            if model:IsA("Model") and model.Name == monsterName then
-                pcall(function() CreateMonsterESP(model) end)
+            if model:IsA("Model") then
+                local baseName = MatchMonsterName(model.Name)
+                if baseName and MonsterToggle[baseName] then
+                    pcall(function() CreateMonsterESP(model) end)
+                end
             end
         end
         return
@@ -311,8 +393,11 @@ local function ScanMonster(monsterName)
     
     -- Cari monster di dalam folder Living dan subfoldernya
     for _, desc in ipairs(MONSTER_FOLDER:GetDescendants()) do
-        if desc:IsA("Model") and desc.Name == monsterName then
-            pcall(function() CreateMonsterESP(desc) end)
+        if desc:IsA("Model") then
+            local baseName = MatchMonsterName(desc.Name)
+            if baseName and MonsterToggle[baseName] then
+                pcall(function() CreateMonsterESP(desc) end)
+            end
         end
     end
 end
@@ -338,8 +423,11 @@ end
 local function WatchMonsterFolder(folder)
     if not folder then return end
     folder.DescendantAdded:Connect(function(obj)
-        if obj:IsA("Model") and MonsterToggle[obj.Name] then
-            pcall(function() CreateMonsterESP(obj) end)
+        if obj:IsA("Model") then
+            local baseName = MatchMonsterName(obj.Name)
+            if baseName and MonsterToggle[baseName] then
+                pcall(function() CreateMonsterESP(obj) end)
+            end
         end
     end)
     folder.DescendantRemoving:Connect(function(obj)
@@ -370,7 +458,7 @@ Workspace.DescendantAdded:Connect(function(obj)
         MONSTER_FOLDER = obj
         for monster, _ in pairs(MonsterToggle) do 
             if MonsterToggle[monster] then 
-                ScanMonster(monster) 
+                ScanAllMonsters() 
             end 
         end
         WatchMonsterFolder(obj)
@@ -412,14 +500,14 @@ local function UpdateMonsterESP()
         if not model or not model.Parent then 
             RemoveMonsterESP(model) 
         else
-            local visible = MonsterToggle[data.monsterName]
+            local visible = MonsterToggle[data.baseMonsterName]
             if not visible then 
                 RemoveMonsterESP(model) 
             else
                 local hp = GetMonsterHP(model)
                 local dist = rootPart and math.floor((rootPart.Position - data.hitbox.Position).Magnitude) or 0
                 if data.label then
-                    data.label.Text = string.format("%s | HP: %d | %dm", data.monsterName, hp, dist)
+                    data.label.Text = string.format("%s | HP: %d | %dm", data.baseMonsterName, hp, dist)
                 end
                 if data.highlight and data.highlight.Adornee ~= model then
                     data.highlight.Adornee = model
@@ -496,28 +584,30 @@ local MonsterTab = Window:CreateTab("👹 ESP Monster")
 
 MonsterTab:CreateSection("Monster ESP Settings")
 
-local monsterNames = {}
-for _, name in ipairs(MONSTER_DATA) do
-    table.insert(monsterNames, name)
-end
-table.sort(monsterNames)
+-- Informasi sistem matching
+MonsterTab:CreateLabel("🔄 Auto-Detect System Active")
+MonsterTab:CreateLabel("Matching patterns: Name + Random Numbers")
+MonsterTab:CreateLabel("Example: 'Axe Skeleton8444' → 'Axe Skeleton'")
 
-for _, monsterName in ipairs(monsterNames) do
+-- Sort monster names
+table.sort(MONSTER_BASE_NAMES)
+
+for _, monsterName in ipairs(MONSTER_BASE_NAMES) do
     MonsterTab:CreateToggle({
         Name = monsterName,
         CurrentValue = false,
         Callback = function(val)
             MonsterToggle[monsterName] = val
             if val then
-                ScanMonster(monsterName)
+                ScanAllMonsters()
                 Rayfield:Notify({
                     Title = "Monster ESP Added",
-                    Content = monsterName .. " ESP enabled",
+                    Content = monsterName .. " ESP enabled\nAuto-detect activated",
                     Duration = 2
                 })
             else
                 for model, data in pairs(Monster_ByModel) do
-                    if data.monsterName == monsterName then
+                    if data.baseMonsterName == monsterName then
                         RemoveMonsterESP(model)
                     end
                 end
@@ -533,9 +623,25 @@ end
 
 -- Informasi jika folder monster tidak ditemukan
 if not MONSTER_FOLDER then
-    MonsterTab:CreateLabel("⚠️ Folder 'Living' tidak ditemukan di Workspace")
+    MonsterTab:CreateSection("⚠️ Warning")
+    MonsterTab:CreateLabel("Folder 'Living' tidak ditemukan di Workspace")
     MonsterTab:CreateLabel("ESP akan mencari monster di seluruh Workspace")
+    MonsterTab:CreateLabel("Performance mungkin sedikit menurun")
 end
+
+-- Debug button untuk testing matching
+MonsterTab:CreateSection("Debug Tools")
+MonsterTab:CreateButton({
+    Name = "🔄 Rescan All Monsters",
+    Callback = function()
+        ScanAllMonsters()
+        Rayfield:Notify({
+            Title = "Rescan Complete",
+            Content = "All monsters have been rescanned",
+            Duration = 2
+        })
+    end
+})
 
 -- ===== CHARACTER HANDLING =====
 player.CharacterAdded:Connect(function(character)
@@ -548,22 +654,65 @@ player.CharacterAdded:Connect(function(character)
     end
     for monsterName, state in pairs(MonsterToggle) do
         if state then
-            ScanMonster(monsterName)
+            ScanAllMonsters()
         end
     end
 end)
 
+-- ===== DEBUG FUNCTIONS =====
+local function PrintMonsterMatchExamples()
+    print("\n=== Monster Matching Examples ===")
+    local testNames = {
+        "Axe Skeleton8444",
+        "Blazing Slime3389", 
+        "Blight Pyromancer7309",
+        "Deathaxe Skeleton7902",
+        "Bomber8440",
+        "Berserker_Vek", -- Should be ignored
+        "Player123", -- Should be ignored
+        "Zombie1234",
+        "Elite Rogue Skeleton9999"
+    }
+    
+    for _, testName in ipairs(testNames) do
+        local matched = MatchMonsterName(testName)
+        if matched then
+            print(string.format("✓ '%s' → '%s'", testName, matched))
+        else
+            print(string.format("✗ '%s' → No Match (Ignored)", testName))
+        end
+    end
+    print("===============================\n")
+end
+
 -- ===== INITIALIZATION =====
+-- Clear cache on load
+MonsterPatternCache = {}
+
 Rayfield:Notify({
     Title = "DarkCarbon Hub Loaded",
-    Content = "Ore & Monster ESP System Ready!",
+    Content = "Ore & Monster ESP System Ready!\nAuto-detect system active",
     Duration = 3
 })
 
+-- Print debug info
 print("=====================================")
 print("DarkCarbon ESP System Loaded")
 print("Total Ore Types: " .. #oreNames)
-print("Total Monster Types: " .. #monsterNames)
-print("Monster Folder: Living")
-print("ESP Type: Highlight (Follows Object Shape)")
+print("Total Monster Types: " .. #MONSTER_BASE_NAMES)
+print("Monster Folder: " .. (MONSTER_FOLDER and "Found (Living)" or "Not Found"))
+print("Matching System: Advanced Pattern Matching")
+print("=====================================")
+
+-- Run example matching
+PrintMonsterMatchExamples()
+
+print("\n✅ System Ready - Monster names will be auto-detected!")
+print("Examples that will work:")
+print("  - 'Axe Skeleton8444' → 'Axe Skeleton'")
+print("  - 'Blazing Slime1234' → 'Blazing Slime'")
+print("  - 'Blight Pyromancer5678' → 'Blight Pyromancer'")
+print("\n❌ Names that will be ignored:")
+print("  - 'Berserker_Vek' (player name)")
+print("  - Any name with underscore")
 print("=====================================")
